@@ -21,7 +21,8 @@
     dmTabs: [],           // array of { id, username, name_color, name_font }
     dmMessages: {},       // { [userId]: [...messages] }
     dmPolling: {},        // { [userId]: intervalId }
-    pendingInvite: null   // directory user being invited via "Invite to call"
+    pendingInvite: null,  // directory user being invited via "Invite to call"
+    openUserMenu: null    // directory user id whose ••• menu is open
   };
 
   const el = {
@@ -255,7 +256,8 @@
     try {
       const d = await api(`/api/dm/${userId}`);
       const prev = state.dmMessages[userId] || [];
-      if (d.messages && d.messages.length !== prev.length) {
+      const sig = (list) => `${list.length}:${list.length ? list[list.length - 1].id : 0}`;
+      if (d.messages && sig(d.messages) !== sig(prev)) {
         state.dmMessages[userId] = d.messages;
         renderActiveChat(false);
       }
@@ -402,6 +404,33 @@
     for (let i = 0; i < BANNER_REPEATS; i++) el.nextCallContent.appendChild(bannerItem(ev));
   }
 
+  // One chat line; your own messages get a × delete button that shows on hover
+  function chatLine(msg, d, authorId, onDelete) {
+    const line = document.createElement('div');
+    line.className = 'chat-line';
+    const t = document.createElement('small');
+    t.className = 'chat-time';
+    t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    line.appendChild(t);
+    line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
+    line.appendChild(document.createTextNode(': '));
+    linkify(line, msg.body);
+    if (state.user && authorId === state.user.id) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'chat-delete';
+      del.textContent = '×';
+      del.title = 'Delete message';
+      del.setAttribute('aria-label', 'Delete message');
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete this message?')) return;
+        try { await onDelete(); } catch (e) { alert(e.message); }
+      });
+      line.appendChild(del);
+    }
+    return line;
+  }
+
   function renderChat(forceBottom = false) {
     const stick = forceBottom || el.chatMessages.scrollHeight - el.chatMessages.scrollTop - el.chatMessages.clientHeight < 60;
     el.chatMessages.innerHTML = '';
@@ -417,15 +446,11 @@
         p.textContent = day;
         el.chatMessages.appendChild(p);
       }
-      const line = document.createElement('div');
-      const t = document.createElement('small');
-      t.className = 'chat-time';
-      t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-      line.appendChild(t);
-      line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
-      line.appendChild(document.createTextNode(': '));
-      linkify(line, msg.body);
-      el.chatMessages.appendChild(line);
+      el.chatMessages.appendChild(chatLine(msg, d, msg.user_id, async () => {
+        await api(`/api/messages/${msg.id}`, { method: 'DELETE' });
+        state.messages = state.messages.filter(m => m.id !== msg.id);
+        renderChat(false);
+      }));
     }
     if (stick) el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
   }
@@ -446,15 +471,11 @@
         p.textContent = day;
         el.chatMessages.appendChild(p);
       }
-      const line = document.createElement('div');
-      const t = document.createElement('small');
-      t.className = 'chat-time';
-      t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-      line.appendChild(t);
-      line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
-      line.appendChild(document.createTextNode(': '));
-      linkify(line, msg.body);
-      el.chatMessages.appendChild(line);
+      el.chatMessages.appendChild(chatLine(msg, d, msg.from_user_id, async () => {
+        await api(`/api/dm-messages/${msg.id}`, { method: 'DELETE' });
+        state.dmMessages[userId] = (state.dmMessages[userId] || []).filter(m => m.id !== msg.id);
+        renderDMChat(userId, false);
+      }));
     }
     if (stick) el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
   }
@@ -476,31 +497,47 @@
         el.directoryList.appendChild(li);
         continue;
       }
-      li.appendChild(document.createTextNode(' '));
+      // Options live behind a ••• toggle at the right of the row
+      const moreBtn = document.createElement('button');
+      moreBtn.type = 'button';
+      moreBtn.className = 'user-more-btn';
+      moreBtn.textContent = '•••';
+      moreBtn.title = `Options for ${u.username}`;
+      moreBtn.setAttribute('aria-label', `Options for ${u.username}`);
+      const isOpen = state.openUserMenu === u.id;
+      moreBtn.setAttribute('aria-expanded', String(isOpen));
+      moreBtn.addEventListener('click', () => {
+        state.openUserMenu = isOpen ? null : u.id;
+        renderDirectory();
+      });
+      li.appendChild(moreBtn);
+
+      const menu = document.createElement('div');
+      menu.className = 'user-menu';
+      menu.hidden = !isOpen;
 
       const chatBtn = document.createElement('button');
       chatBtn.textContent = 'Chat';
       chatBtn.addEventListener('click', () => {
         if (!requireAuth()) return;
+        state.openUserMenu = null;
         setDirectoryOpen(false);
         openDMTab(u);
       });
-      li.appendChild(chatBtn);
-
-      li.appendChild(document.createTextNode(' '));
+      menu.appendChild(chatBtn);
 
       if (u.email) {
         const emailBtn = document.createElement('button');
         emailBtn.textContent = 'Email';
         emailBtn.addEventListener('click', () => openMailto(u.email));
-        li.appendChild(emailBtn);
-        li.appendChild(document.createTextNode(' '));
+        menu.appendChild(emailBtn);
       }
 
       const callBtn = document.createElement('button');
       callBtn.textContent = 'Invite to call';
       callBtn.addEventListener('click', () => {
         if (!requireAuth()) return;
+        state.openUserMenu = null;
         // Pre-fill a new event and open the form
         el.eventTitleInput.value = `Call with ${u.username}`;
         state.pendingInvite = u;   // emailed the call details once it's created (if they allow emails)
@@ -509,7 +546,8 @@
         setDirectoryOpen(false);
         setMobileView('calendar');
       });
-      li.appendChild(callBtn);
+      menu.appendChild(callBtn);
+      li.appendChild(menu);
 
       el.directoryList.appendChild(li);
     }
@@ -956,8 +994,10 @@
       }
       if (d.stateToken && d.stateToken !== state.stateToken) {
         state.stateToken = d.stateToken;
-        const [fr, er, ur] = await Promise.all([api('/api/folders'), api('/api/events'), api('/api/users')]);
+        const [fr, er, ur, mr] = await Promise.all([api('/api/folders'), api('/api/events'), api('/api/users'), api('/api/messages')]);
         state.folders = fr.folders||[]; state.events = er.events||[]; state.users = ur.users||[];
+        // Full reload catches messages deleted by others
+        if (mr.messages) { state.messages = mr.messages; if (state.activeTab === 'group') renderChat(false); }
         renderFolders(); renderCalendar(); renderBanner(); renderDirectory();
         if (state.activeFolderId) {
           const ad = await api(`/api/folders/${state.activeFolderId}`).catch(() => null);

@@ -105,6 +105,10 @@ const SCHEMA_STATEMENTS = [
     created_at TEXT NOT NULL,
     PRIMARY KEY (event_id, user_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS app_counters (
+    name TEXT PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0
+  )`,
   `CREATE TABLE IF NOT EXISTS direct_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     from_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -477,11 +481,12 @@ async function computeStateToken(db) {
          (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM events) AS e,
          (SELECT COUNT(*) FROM event_rsvps) AS r,
          (SELECT COALESCE(MAX(id), 0) || ':' || COALESCE(SUM(allow_emails), 0) FROM users) AS u,
-         (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm`
+         (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm,
+         (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'messages_deleted') AS md`
     )
     .first();
   if (!row) return '0';
-  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}`;
+  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}`;
 }
 
 // --- Are.na API Helpers ---
@@ -1077,6 +1082,39 @@ export default {
           };
           return jsonResponse({ message: created }, 201);
         }
+      }
+
+      // 8b. Delete your own group chat message
+      const msgDeleteMatch = pathname.match(/^\/api\/messages\/(\d+)$/);
+      if (method === 'DELETE' && msgDeleteMatch) {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const res = await env.DB
+          .prepare(`DELETE FROM messages WHERE id = ? AND user_id = ?`)
+          .bind(parseInt(msgDeleteMatch[1], 10), user.id)
+          .run();
+        if (!res.meta?.changes) return errorResponse('Message not found.', 404);
+        // Bumps the poll state token so other clients reload the chat
+        await env.DB
+          .prepare(
+            `INSERT INTO app_counters (name, value) VALUES ('messages_deleted', 1)
+             ON CONFLICT(name) DO UPDATE SET value = value + 1`
+          )
+          .run();
+        return jsonResponse({ ok: true });
+      }
+
+      // 8c. Delete your own direct message
+      const dmDeleteMatch = pathname.match(/^\/api\/dm-messages\/(\d+)$/);
+      if (method === 'DELETE' && dmDeleteMatch) {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const res = await env.DB
+          .prepare(`DELETE FROM direct_messages WHERE id = ? AND from_user_id = ?`)
+          .bind(parseInt(dmDeleteMatch[1], 10), user.id)
+          .run();
+        if (!res.meta?.changes) return errorResponse('Message not found.', 404);
+        return jsonResponse({ ok: true });
       }
 
       // 9. Resource Folders (Are.na Channels)

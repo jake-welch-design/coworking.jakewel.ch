@@ -621,6 +621,77 @@ body.timer-alarm .pane {
   margin-bottom: 4px;
 }
 
+/* Directory rows: dot + name on the left, ••• on the right, options drop below */
+#directory-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.user-more-btn {
+  margin-left: auto;
+  padding: 0 6px;
+  line-height: 1.4;
+  letter-spacing: 1px;
+}
+
+.user-menu {
+  flex-basis: 100%;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.user-menu[hidden] {
+  display: none;
+}
+
+/* Chat: × delete on your own messages, shown on hover */
+.chat-line {
+  position: relative;
+  padding-right: 22px;
+}
+
+.chat-line:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+button.chat-delete {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  visibility: hidden;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0 4px;
+  line-height: inherit;
+  color: #888888;
+  cursor: pointer;
+}
+
+button.chat-delete:hover,
+button.chat-delete:focus-visible {
+  color: #000000;
+  border: none;
+  box-shadow: none;
+}
+
+.chat-line:hover button.chat-delete,
+button.chat-delete:focus-visible {
+  visibility: visible;
+}
+
+/* Touch screens have no hover: keep the × faintly visible */
+@media (hover: none) {
+  button.chat-delete {
+    visibility: visible;
+    opacity: 0.5;
+  }
+}
+
 /* Presence bullets replace the list markers */
 #directory-list {
   list-style: none;
