@@ -1,162 +1,240 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Coworking</title>
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <header id="site-header">
-    <strong><a href="/">Coworking</a></strong>
-    <span id="auth-bar">
-      <a href="/login.html">Log in</a> / <a href="/signup.html">Sign up</a>
-    </span>
-  </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coworking</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header id="site-header">
+      <strong><a href="/">Coworking</a></strong>
+      <span id="auth-bar">
+        <a href="/login.html">log in</a> / <a href="/signup.html">sign up</a>
+      </span>
+    </header>
 
-  <marquee id="next-call-banner" scrollamount="4">
-    <span id="next-call-content"><strong>Next call:</strong> none</span>
-  </marquee>
+    <marquee id="next-call-banner" scrollamount="4">
+      <span id="next-call-content"><strong>Next call:</strong> none</span>
+    </marquee>
 
-  <p id="mobile-nav-bar">
-    <label for="mobile-view-select">Section:</label>
-    <select id="mobile-view-select">
-      <option value="lounge">Lounge</option>
-      <option value="resources">Resources</option>
-      <option value="calendar">Calendar</option>
-    </select>
-  </p>
+    <hr />
 
-  <hr />
+    <main id="workspace">
+      <!-- Panes: order and widths are adjustable on desktop (see layout.js) -->
+      <aside id="resources-pane" class="pane" data-pane="resources">
+        <div id="folders-list-view">
+          <h2 class="pane-title">Resources</h2>
 
-  <main id="workspace" data-mobile-view="lounge">
-    <!-- Left 25%: Resources -->
-    <aside id="resources-pane">
-      <div id="folders-list-view">
-        <p><strong class="pane-title">Resources</strong></p>
+          <details id="new-folder-details">
+            <summary class="bevel-btn">+ New folder</summary>
+            <form id="new-folder-form">
+              <p>
+                <input
+                  type="text"
+                  id="folder-title-input"
+                  placeholder="Folder title"
+                  maxlength="100"
+                />
+              </p>
+              <p>
+                <input
+                  type="text"
+                  id="folder-slug-input"
+                  placeholder="Are.na URL or slug (optional)"
+                />
+              </p>
+              <p><button type="submit">Create</button></p>
+              <p id="folder-form-error" hidden></p>
+            </form>
+          </details>
 
-        <details id="new-folder-details">
-          <summary class="bevel-btn">+ New folder</summary>
-          <form id="new-folder-form">
-            <p><input type="text" id="folder-title-input" placeholder="Folder title" maxlength="100" /></p>
-            <p><input type="text" id="folder-slug-input" placeholder="Are.na URL or slug (optional)" /></p>
-            <p><button type="submit">Create</button></p>
-            <p id="folder-form-error" hidden></p>
-          </form>
-        </details>
-
-        <ul id="folders-list"></ul>
-      </div>
-
-      <div id="folder-detail-view" hidden>
-        <p>
-          <a href="#" id="back-to-folders-link">&larr; Resources</a>
-          &middot; <a href="#" id="sync-folder-link">Sync</a>
-        </p>
-        <div id="active-folder-meta"></div>
-
-        <fieldset id="block-dropzone">
-          <legend>Add block</legend>
-          <form id="add-block-form">
-            <p><textarea id="block-input" rows="2" placeholder="URL or text"></textarea></p>
-            <p><input type="text" id="block-title-input" placeholder="Title (optional)" maxlength="140" /></p>
-            <p><input type="file" id="block-file-input" multiple /></p>
-            <p>
-              <button type="submit" id="add-block-submit-btn">Add</button>
-              <small id="block-upload-status" hidden></small>
-            </p>
-            <p id="block-form-error" hidden></p>
-          </form>
-        </fieldset>
-
-        <ul id="blocks-list"></ul>
-      </div>
-    </aside>
-
-    <!-- Middle 25%: Calendar (top) + Directory (bottom) -->
-    <section id="middle-pane">
-      <div id="calendar-pane">
-        <p><strong class="pane-title">Calendar</strong></p>
-
-        <p id="cal-nav">
-          <button type="button" id="cal-prev-link" aria-label="Previous month">&larr;</button>
-          <strong id="cal-month-label"></strong>
-          <button type="button" id="cal-next-link" aria-label="Next month">&rarr;</button>
-          <button type="button" id="cal-today-link">Today</button>
-          <button type="button" id="schedule-call-btn" aria-controls="new-event-details">Schedule call</button>
-        </p>
-
-        <details id="new-event-details">
-          <summary hidden>Schedule call</summary>
-          <form id="new-event-form">
-            <p><input type="text" id="event-title-input" placeholder="Title" maxlength="120" required /></p>
-            <p>
-              <input type="date" id="event-date-input" required />
-              <input type="time" id="event-time-input" required />
-            </p>
-            <p>
-              <select id="event-duration-input">
-                <option value="30">30m</option>
-                <option value="45">45m</option>
-                <option value="60" selected>60m</option>
-                <option value="90">90m</option>
-                <option value="120">120m</option>
-                <option value="180">180m</option>
-              </select>
-              <input type="text" id="event-location-input" value="FaceTime" placeholder="Location or URL" maxlength="300" />
-            </p>
-            <p><input type="text" id="event-notes-input" placeholder="Notes (optional)" maxlength="500" /></p>
-            <p><button type="submit">Add</button></p>
-            <p id="event-form-error" hidden></p>
-          </form>
-        </details>
-
-        <table cellpadding="4" cellspacing="0" id="calendar-table">
-          <thead>
-            <tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr>
-          </thead>
-          <tbody id="calendar-grid-body"></tbody>
-        </table>
-
-        <p>
-          <strong id="events-list-heading">Upcoming</strong>
-          <a href="#" id="clear-date-filter-link" hidden>(Show all)</a>
-        </p>
-        <ul id="events-list"></ul>
-      </div>
-
-      <hr />
-
-      <div id="directory-pane">
-        <p><strong class="pane-title">Directory</strong></p>
-        <ul id="directory-list"></ul>
-      </div>
-    </section>
-
-    <!-- Right 50%: Lounge -->
-    <section id="lounge-pane">
-      <div id="lounge-header">
-        <p><strong class="pane-title">Lounge</strong></p>
-        <div id="radio-bar">
-          <img src="/nts.jpg" alt="" id="nts-logo" width="20" height="20" />
-          <strong>NTS</strong>
-          <button type="button" class="radio-btn" data-src="https://audio-edge-vqwx4.yyz.g.radiomast.io/nts1" aria-label="Play NTS 1">1 &#9654;</button>
-          <button type="button" class="radio-btn" data-src="https://audio-edge-n9hx8.yul.o.radiomast.io/nts2" aria-label="Play NTS 2">2 &#9654;</button>
+          <ul id="folders-list"></ul>
         </div>
-      </div>
 
-      <div id="chat-tabs">
-        <span id="tab-group" class="chat-tab active" data-tab="group">Group</span>
-      </div>
+        <div id="folder-detail-view" hidden>
+          <p>
+            <a href="#" id="back-to-folders-link">&larr; Resources</a>
+            &middot; <a href="#" id="sync-folder-link">Sync</a>
+          </p>
+          <div id="active-folder-meta"></div>
 
-      <div id="chat-messages" role="log" aria-live="polite"></div>
-      <form id="chat-form">
-        <input type="text" id="chat-input" placeholder="Message" maxlength="2000" />
-        <button type="submit" id="chat-send-btn">Send</button>
-      </form>
-    </section>
-  </main>
+          <fieldset id="block-dropzone">
+            <legend>Add block</legend>
+            <form id="add-block-form">
+              <p>
+                <textarea
+                  id="block-input"
+                  rows="2"
+                  placeholder="URL or text"
+                ></textarea>
+              </p>
+              <p>
+                <input
+                  type="text"
+                  id="block-title-input"
+                  placeholder="Title (optional)"
+                  maxlength="140"
+                />
+              </p>
+              <p><input type="file" id="block-file-input" multiple /></p>
+              <p>
+                <button type="submit" id="add-block-submit-btn">Add</button>
+                <small id="block-upload-status" hidden></small>
+              </p>
+              <p id="block-form-error" hidden></p>
+            </form>
+          </fieldset>
 
-  <script src="/app.js"></script>
-</body>
+          <ul id="blocks-list"></ul>
+        </div>
+      </aside>
+
+      <section id="calendar-pane" class="pane" data-pane="calendar">
+        <div>
+          <h2 class="pane-title">Calendar</h2>
+
+          <p id="cal-nav">
+            <button
+              type="button"
+              id="cal-prev-link"
+              aria-label="Previous month"
+            >
+              &larr;
+            </button>
+            <strong id="cal-month-label"></strong>
+            <button type="button" id="cal-next-link" aria-label="Next month">
+              &rarr;
+            </button>
+            <button type="button" id="cal-today-link">Today</button>
+            <button
+              type="button"
+              id="schedule-call-btn"
+              aria-controls="new-event-details"
+            >
+              Schedule call
+            </button>
+          </p>
+
+          <details id="new-event-details">
+            <summary hidden>Schedule call</summary>
+            <form id="new-event-form">
+              <p>
+                <input
+                  type="text"
+                  id="event-title-input"
+                  placeholder="Title"
+                  maxlength="120"
+                  required
+                />
+              </p>
+              <p>
+                <input type="date" id="event-date-input" required />
+                <input type="time" id="event-time-input" required />
+              </p>
+              <p>
+                <select id="event-duration-input">
+                  <option value="30">30m</option>
+                  <option value="45">45m</option>
+                  <option value="60" selected>60m</option>
+                  <option value="90">90m</option>
+                  <option value="120">120m</option>
+                  <option value="180">180m</option>
+                </select>
+                <input
+                  type="text"
+                  id="event-location-input"
+                  value="FaceTime"
+                  placeholder="Location or URL"
+                  maxlength="300"
+                />
+              </p>
+              <p>
+                <input
+                  type="text"
+                  id="event-notes-input"
+                  placeholder="Notes (optional)"
+                  maxlength="500"
+                />
+              </p>
+              <p><button type="submit">Add</button></p>
+              <p id="event-form-error" hidden></p>
+            </form>
+          </details>
+
+          <table cellpadding="4" cellspacing="0" id="calendar-table">
+            <thead>
+              <tr>
+                <th>Su</th>
+                <th>Mo</th>
+                <th>Tu</th>
+                <th>We</th>
+                <th>Th</th>
+                <th>Fr</th>
+                <th>Sa</th>
+              </tr>
+            </thead>
+            <tbody id="calendar-grid-body"></tbody>
+          </table>
+
+          <p>
+            <strong id="events-list-heading">Upcoming</strong>
+            <a href="#" id="clear-date-filter-link" hidden>(Show all)</a>
+          </p>
+          <ul id="events-list"></ul>
+        </div>
+      </section>
+
+      <section id="directory-pane" class="pane" data-pane="directory">
+        <h2 class="pane-title">Directory</h2>
+        <ul id="directory-list"></ul>
+      </section>
+
+      <section id="lounge-pane" class="pane" data-pane="lounge">
+        <div id="lounge-header" class="pane-title">
+          <h2>Lounge</h2>
+          <div id="radio-bar">
+            <img src="/nts.jpg" alt="" id="nts-logo" width="20" height="20" />
+            <strong>NTS</strong>
+            <button
+              type="button"
+              class="radio-btn"
+              data-src="https://audio-edge-vqwx4.yyz.g.radiomast.io/nts1"
+              aria-label="Play NTS 1"
+            >
+              1 &#9654;
+            </button>
+            <button
+              type="button"
+              class="radio-btn"
+              data-src="https://audio-edge-n9hx8.yul.o.radiomast.io/nts2"
+              aria-label="Play NTS 2"
+            >
+              2 &#9654;
+            </button>
+          </div>
+        </div>
+
+        <div id="chat-tabs">
+          <span id="tab-group" class="chat-tab active" data-tab="group"
+            >Group</span
+          >
+        </div>
+
+        <div id="chat-messages" role="log" aria-live="polite"></div>
+        <form id="chat-form">
+          <input
+            type="text"
+            id="chat-input"
+            placeholder="Message"
+            maxlength="2000"
+          />
+          <button type="submit" id="chat-send-btn">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+    <script src="/layout.js"></script>
+  </body>
 </html>

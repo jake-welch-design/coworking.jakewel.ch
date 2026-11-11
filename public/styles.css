@@ -16,11 +16,54 @@ body {
 body {
   font-family: "Arial", Times, serif;
   font-size: 14px;
-  background: white;
+  background: transparent;
   color: #000000;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+/* Daylight sky behind everything */
+html {
+  background: linear-gradient(
+    to bottom,
+    #2f6fd0 0%,
+    #4d8ee0 30%,
+    #86b8ee 65%,
+    #c4e0f7 90%,
+    #e3f1fb 100%
+  );
+  background-attachment: fixed;
+  min-height: 100%;
+}
+
+/* Drifting clouds (cloud.png from tutorials.jakewel.ch), tiled so the loop is seamless */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("/cloud.png");
+  background-repeat: repeat-x;
+  background-size: 100vw 100vh;
+  opacity: 0.8;
+  animation: cloud-drift 120s linear infinite;
+}
+
+@keyframes cloud-drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 100vw 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
 }
 
 a:visited {
@@ -104,6 +147,11 @@ select {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
 
+/* Everything in the header except the "Coworking" title is lowercase */
+#auth-bar {
+  text-transform: lowercase;
+}
+
 #site-header {
   display: flex;
   justify-content: space-between;
@@ -116,7 +164,7 @@ select {
 #next-call-banner {
   display: block;
   width: 100%;
-  background: #2a7517;
+  background: #34846c;
   color: #ffffff;
   padding: 4px 8px;
   margin: 0;
@@ -131,25 +179,91 @@ select {
   color: #ffffff;
 }
 
-#mobile-nav-bar {
-  display: none;
-  padding: 6px 8px;
-  margin: 0;
-}
-
+/* layout.js arranges panes into columns: column, gutter, column, ...
+   Each column stacks panes with row gutters between them. */
 #workspace {
-  display: grid;
-  grid-template-columns: 25% 25% 1fr;
+  display: flex;
   flex: 1;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 20px;
   padding: 20px;
+  position: relative;
 }
 
-#resources-pane,
-#middle-pane,
-#lounge-pane {
+.pane-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-gutter {
+  flex: 0 0 20px;
+}
+
+.pane-gutter-col {
+  cursor: col-resize;
+}
+
+.pane-gutter-row {
+  cursor: row-resize;
+}
+
+/* Medium/mobile widths: layout is derived, not editable */
+#workspace.layout-locked .pane-gutter {
+  cursor: default;
+}
+
+body.is-resizing-col,
+body.is-resizing-col * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+body.is-resizing-row,
+body.is-resizing-row * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+
+body.is-moving,
+body.is-moving * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.pane.edge-hover {
+  cursor: grab;
+}
+
+.pane.is-dragging {
+  position: relative;
+  z-index: 10;
+  opacity: 0.85;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.drop-indicator {
+  position: absolute;
+  background: #000000;
+  pointer-events: none;
+  z-index: 11;
+}
+
+/* New column here */
+.drop-indicator-col {
+  top: 20px;
+  bottom: 20px;
+  width: 3px;
+  margin-left: -1.5px;
+}
+
+/* Into this stack here */
+.drop-indicator-row {
+  height: 3px;
+  margin-top: -1.5px;
+}
+
+.pane {
   background: #ffffff;
   border: none;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
@@ -165,12 +279,23 @@ select {
   flex-direction: column;
 }
 
-/* Pane titles: black label, white text */
+/* Pane titles: full-bleed black bar, white text (negative margins cancel the pane padding) */
+.pane-title,
+.pane-title h2 {
+  font-size: inherit;
+  font-weight: bold;
+}
+
+/* Fixed height so every title bar matches the Lounge bar (which holds the radio buttons) */
 .pane-title {
-  display: inline-block;
-  background: #000000;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  background: #2c2c51;
   color: #ffffff;
-  padding: 2px 8px;
+  margin: -12px -14px 12px;
+  padding: 0 14px;
+  flex: none;
 }
 
 #lounge-header {
@@ -178,10 +303,10 @@ select {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  flex: none;
 }
 
-#lounge-header p {
+#lounge-header h2 {
   margin: 0;
 }
 
@@ -293,6 +418,14 @@ legend {
   padding: 14px;
 }
 
+/* Standalone page content in a pane (e.g. login), centered over the sky */
+.pane.page-form {
+  width: calc(100% - 32px);
+  margin: 40px auto;
+  padding: 12px 14px;
+  overflow: visible;
+}
+
 #directory-list li {
   margin-bottom: 4px;
 }
@@ -358,10 +491,6 @@ summary.bevel-btn::-webkit-details-marker {
 }
 
 @media (max-width: 768px) {
-  #mobile-nav-bar {
-    display: block;
-  }
-
   body {
     height: auto;
   }
@@ -369,26 +498,23 @@ summary.bevel-btn::-webkit-details-marker {
   #workspace {
     display: block;
     padding: 16px;
-    gap: 0;
   }
 
-  #resources-pane,
-  #middle-pane,
-  #lounge-pane {
+  .pane-column {
+    display: block;
+  }
+
+  .pane {
     margin-bottom: 16px;
+  }
+
+  .pane-gutter,
+  .drop-indicator {
+    display: none;
   }
 
   #chat-messages {
     flex: none;
     height: 50vh;
-  }
-
-  #workspace[data-mobile-view="lounge"] #resources-pane,
-  #workspace[data-mobile-view="lounge"] #middle-pane,
-  #workspace[data-mobile-view="resources"] #middle-pane,
-  #workspace[data-mobile-view="resources"] #lounge-pane,
-  #workspace[data-mobile-view="calendar"] #resources-pane,
-  #workspace[data-mobile-view="calendar"] #lounge-pane {
-    display: none;
   }
 }

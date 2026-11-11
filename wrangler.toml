@@ -19,4 +19,4 @@ database_name = "coworking-db"
 database_id = "3d37f932-c9ae-436c-af14-570e004e5ff3"
 
 [vars]
-ARENA_CHANNEL_STATUS = "closed"
+ARENA_CHANNEL_STATUS = "private"

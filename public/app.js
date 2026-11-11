@@ -16,7 +16,6 @@
     calMonth: new Date().getMonth(),
     selectedDateKey: null,
     stateToken: '',
-    mobileView: 'lounge',
     // Chat tabs
     activeTab: 'group',   // 'group' or a user id (number)
     dmTabs: [],           // array of { id, username, name_color, name_font }
@@ -28,7 +27,6 @@
     workspace: document.getElementById('workspace'),
     authBar: document.getElementById('auth-bar'),
     nextCallContent: document.getElementById('next-call-content'),
-    mobileSelect: document.getElementById('mobile-view-select'),
     foldersListView: document.getElementById('folders-list-view'),
     folderDetailView: document.getElementById('folder-detail-view'),
     newFolderDetails: document.getElementById('new-folder-details'),
@@ -165,10 +163,11 @@
     return null;
   }
 
+  // On mobile all panes are stacked; bring the requested one into view
   function setMobileView(v) {
-    state.mobileView = v;
-    el.workspace.setAttribute('data-mobile-view', v);
-    el.mobileSelect.value = v;
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    const pane = document.getElementById(`${v}-pane`);
+    if (pane) pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function requireAuth() {
@@ -664,7 +663,6 @@
   function bind() {
     ensureEventDefaults();
 
-    el.mobileSelect.addEventListener('change', () => setMobileView(el.mobileSelect.value));
 
     el.chatInput.addEventListener('focus', () => { if (!state.user) window.location.href = '/login.html'; });
     el.chatForm.addEventListener('submit', async e => {
