@@ -154,9 +154,10 @@
     return `${(b/1048576).toFixed(1)} MB`;
   }
 
-  // Chat day separator: "DD MM YYYY"
+  // Chat day separator: "DD Month YYYY", e.g. "11 November 2026"
   function fmtDay(d) {
-    return `${String(d.getDate()).padStart(2,'0')} ${String(d.getMonth()+1).padStart(2,'0')} ${d.getFullYear()}`;
+    const month = d.toLocaleDateString([], { month: 'long' });
+    return `${String(d.getDate()).padStart(2,'0')} ${month} ${d.getFullYear()}`;
   }
 
   function fmtDT(iso) {

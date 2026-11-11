@@ -388,7 +388,8 @@ body.is-moving * {
 .chat-day {
   font-size: smaller;
   text-align: left;
-  margin: 8px 0 4px;
+  margin: 0;
+  padding: 16px 0 8px;
 }
 
 #chat-form {
