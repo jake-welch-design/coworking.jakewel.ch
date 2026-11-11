@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coworking</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header id="site-header">
+    <strong><a href="#" id="brand-link">Coworking</a></strong>
+    <span id="auth-bar">
+      <a href="#" id="open-login-link">Log in</a> / <a href="#" id="open-signup-link">Sign up</a>
+    </span>
+  </header>
+
+  <p id="next-call-banner">
+    <strong>Next call:</strong> <span id="next-call-content">none</span>
+  </p>
+
+  <p id="mobile-nav-bar">
+    <label for="mobile-view-select">Section:</label>
+    <select id="mobile-view-select">
+      <option value="chat">Chat</option>
+      <option value="resources">Resources</option>
+      <option value="calendar">Calendar</option>
+    </select>
+    <a href="#" id="mobile-back-chat-link" hidden>Chat</a>
+  </p>
+
+  <hr />
+
+  <main id="workspace" data-mobile-view="chat">
+    <!-- Sidebar: Resource Channels -->
+    <aside id="resources-pane">
+      <div id="folders-list-view">
+        <p>
+          <strong>Resources</strong>
+        </p>
+
+        <details id="new-folder-details">
+          <summary>+ New folder</summary>
+          <form id="new-folder-form">
+            <p>
+              <input type="text" id="folder-title-input" placeholder="Folder title" maxlength="100" />
+            </p>
+            <p>
+              <input type="text" id="folder-slug-input" placeholder="Are.na URL or slug (optional)" />
+            </p>
+            <p>
+              <button type="submit">Create</button>
+            </p>
+            <p id="folder-form-error" hidden></p>
+          </form>
+        </details>
+
+        <ul id="folders-list"></ul>
+      </div>
+
+      <div id="folder-detail-view" hidden>
+        <p>
+          <a href="#" id="back-to-folders-link">&larr; Resources</a>
+          &middot;
+          <a href="#" id="sync-folder-link">Sync</a>
+        </p>
+
+        <div id="active-folder-meta"></div>
+
+        <fieldset id="block-dropzone">
+          <legend>Add or drop block</legend>
+          <form id="add-block-form">
+            <p>
+              <textarea id="block-input" rows="2" placeholder="URL or text"></textarea>
+            </p>
+            <p>
+              <input type="text" id="block-title-input" placeholder="Title (optional)" maxlength="140" />
+            </p>
+            <p>
+              <input type="file" id="block-file-input" multiple />
+            </p>
+            <p>
+              <button type="submit" id="add-block-submit-btn">Add</button>
+              <small id="block-upload-status" hidden></small>
+            </p>
+            <p id="block-form-error" hidden></p>
+          </form>
+        </fieldset>
+
+        <ul id="blocks-list"></ul>
+      </div>
+    </aside>
+
+    <!-- Chat -->
+    <section id="chat-pane">
+      <p><strong>Chat</strong></p>
+
+      <div id="chat-messages" role="log" aria-live="polite"></div>
+
+      <form id="chat-form">
+        <input type="text" id="chat-input" placeholder="Message" maxlength="2000" />
+        <button type="submit" id="chat-send-btn">Send</button>
+      </form>
+    </section>
+
+    <!-- Calendar -->
+    <section id="calendar-pane">
+      <p><strong>Calendar</strong></p>
+
+      <details id="new-event-details">
+        <summary>+ Add call</summary>
+        <form id="new-event-form">
+          <p>
+            <input type="text" id="event-title-input" placeholder="Title" maxlength="120" required />
+          </p>
+          <p>
+            <input type="date" id="event-date-input" required />
+            <input type="time" id="event-time-input" required />
+          </p>
+          <p>
+            <select id="event-duration-input">
+              <option value="30">30m</option>
+              <option value="45">45m</option>
+              <option value="60" selected>60m</option>
+              <option value="90">90m</option>
+              <option value="120">120m</option>
+              <option value="180">180m</option>
+            </select>
+            <input type="text" id="event-location-input" value="FaceTime" placeholder="Location or URL" maxlength="300" />
+          </p>
+          <p>
+            <input type="text" id="event-notes-input" placeholder="Notes (optional)" maxlength="500" />
+          </p>
+          <p>
+            <button type="submit">Add</button>
+          </p>
+          <p id="event-form-error" hidden></p>
+        </form>
+      </details>
+
+      <p>
+        <a href="#" id="cal-prev-link">&larr;</a>
+        <strong id="cal-month-label"></strong>
+        <a href="#" id="cal-next-link">&rarr;</a>
+        &middot;
+        <a href="#" id="cal-today-link">Today</a>
+      </p>
+
+      <table border="1" cellpadding="4" cellspacing="0" id="calendar-table">
+        <thead>
+          <tr>
+            <th>Su</th>
+            <th>Mo</th>
+            <th>Tu</th>
+            <th>We</th>
+            <th>Th</th>
+            <th>Fr</th>
+            <th>Sa</th>
+          </tr>
+        </thead>
+        <tbody id="calendar-grid-body"></tbody>
+      </table>
+
+      <p>
+        <strong id="events-list-heading">Upcoming</strong>
+        <a href="#" id="clear-date-filter-link" hidden>(Show all)</a>
+      </p>
+      <ul id="events-list"></ul>
+    </section>
+  </main>
+
+  <!-- Native HTML Dialog for Log in / Sign up / Style -->
+  <dialog id="auth-dialog">
+    <p id="auth-nav-links">
+      <a href="#" data-auth-tab="login">Log in</a>
+      /
+      <a href="#" data-auth-tab="signup">Sign up</a>
+    </p>
+
+    <form id="login-form">
+      <p><strong>Log in</strong></p>
+      <p>
+        <label>Username or email<br />
+          <input type="text" id="login-identifier" autocomplete="username" required />
+        </label>
+      </p>
+      <p>
+        <label>Password<br />
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </label>
+      </p>
+      <p id="login-error" hidden></p>
+      <p>
+        <button type="submit">Log in</button>
+        <button type="button" class="close-dialog-btn">Cancel</button>
+      </p>
+    </form>
+
+    <form id="signup-form" hidden>
+      <p><strong>Sign up</strong></p>
+      <p>
+        <label>Email<br />
+          <input type="email" id="signup-email" autocomplete="email" required />
+        </label>
+      </p>
+      <p>
+        <label>Username<br />
+          <input type="text" id="signup-username" autocomplete="username" maxlength="24" required />
+        </label>
+      </p>
+      <p>
+        <label>Password<br />
+          <input type="password" id="signup-password" autocomplete="new-password" minlength="6" required />
+        </label>
+      </p>
+      <p id="signup-passcode-row" hidden>
+        <label>Passcode<br />
+          <input type="password" id="signup-passcode" />
+        </label>
+      </p>
+      <p>
+        <label>Color: <input type="color" id="signup-color" value="#0044cc" /></label>
+      </p>
+      <p>
+        <label>Font: <select id="signup-font"></select></label>
+      </p>
+      <p>
+        Preview: <span id="signup-name-preview">username</span>
+      </p>
+      <p id="signup-error" hidden></p>
+      <p>
+        <button type="submit">Sign up</button>
+        <button type="button" class="close-dialog-btn">Cancel</button>
+      </p>
+    </form>
+
+    <form id="style-form" hidden>
+      <p><strong>Name style</strong></p>
+      <p>
+        <label>Color: <input type="color" id="style-color" value="#0044cc" /></label>
+      </p>
+      <p>
+        <label>Font: <select id="style-font"></select></label>
+      </p>
+      <p>
+        Preview: <span id="style-name-preview">username</span>
+      </p>
+      <p id="style-error" hidden></p>
+      <p>
+        <button type="submit">Save</button>
+        <button type="button" class="close-dialog-btn">Cancel</button>
+      </p>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+/* Minimal layout-only CSS — native HTML elements, black & white, Arial */
+
+body {
+  font-family: Arial, sans-serif;
+  background: #ffffff;
+  color: #000000;
+  margin: 10px;
+}
+
+a {
+  color: #000000;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #000000;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+#next-call-banner {
+  border: 1px solid #000000;
+  padding: 6px 8px;
+  margin: 8px 0;
+}
+
+#mobile-nav-bar {
+  display: none;
+}
+
+#workspace {
+  display: grid;
+  grid-template-columns: 250px 1fr 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+#resources-pane,
+#chat-pane {
+  border-right: 1px solid #000000;
+  padding-right: 16px;
+}
+
+#chat-messages {
+  height: 68vh;
+  overflow-y: auto;
+  border: 1px solid #000000;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+#chat-form {
+  display: flex;
+  gap: 6px;
+}
+
+#chat-input {
+  flex: 1;
+}
+
+#block-input,
+#block-title-input,
+#folder-title-input,
+#folder-slug-input,
+#event-title-input,
+#event-notes-input {
+  width: 95%;
+}
+
+.drag-over {
+  outline: 2px dashed #000000;
+}
+
+.block-thumb {
+  max-width: 100%;
+  max-height: 180px;
+  display: block;
+}
+
+blockquote {
+  margin: 4px 0;
+  padding-left: 8px;
+  border-left: 1px solid #000000;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  #mobile-nav-bar {
+    display: block;
+  }
+
+  #workspace {
+    display: block;
+  }
+
+  #resources-pane,
+  #chat-pane {
+    border-right: none;
+    padding-right: 0;
+  }
+
+  #chat-messages {
+    height: 60vh;
+  }
+
+  #workspace[data-mobile-view="chat"] #resources-pane,
+  #workspace[data-mobile-view="chat"] #calendar-pane,
+  #workspace[data-mobile-view="resources"] #chat-pane,
+  #workspace[data-mobile-view="resources"] #calendar-pane,
+  #workspace[data-mobile-view="calendar"] #chat-pane,
+  #workspace[data-mobile-view="calendar"] #resources-pane {
+    display: none;
+  }
+}

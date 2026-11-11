@@ -1,0 +1,15 @@
+{
+  "name": "coworking-hub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Barebones coworking hub with group chat, Are.na resource folders, and call calendar on Cloudflare",
+  "scripts": {
+    "start": "node dev-server.js",
+    "cf:dev": "npx wrangler dev",
+    "db:create": "npx wrangler d1 create coworking-db",
+    "db:init:local": "npx wrangler d1 execute coworking-db --local --file=./schema.sql",
+    "db:init:remote": "npx wrangler d1 execute coworking-db --remote --file=./schema.sql",
+    "deploy": "npx wrangler deploy"
+  }
+}
