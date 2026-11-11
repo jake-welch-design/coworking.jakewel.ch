@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Name style — Coworking</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header id="site-header">
+    <strong><a href="/">Coworking</a></strong>
+    <span id="auth-bar"></span>
+  </header>
+  <hr />
+
+  <div class="page-form">
+    <h2>Name style</h2>
+    <form id="style-form">
+      <p>
+        <label>Color: <input type="color" id="style-color" value="#000000" /></label>
+      </p>
+      <p>
+        <label>Font:
+          <select id="style-font">
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Courier New', monospace">Courier New</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+            <option value="Impact, sans-serif">Impact</option>
+            <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+            <option value="Palatino, 'Palatino Linotype', serif">Palatino</option>
+            <option value="Garamond, serif">Garamond</option>
+            <option value="'Arial Black', sans-serif">Arial Black</option>
+            <option value="Monaco, Consolas, monospace">Monaco</option>
+            <option value="'Brush Script MT', cursive">Brush Script</option>
+          </select>
+        </label>
+      </p>
+      <p>Preview: <span id="style-name-preview">username</span></p>
+      <p id="style-error" hidden></p>
+      <p>
+        <button type="submit">Save</button>
+        <a href="/">Cancel</a>
+      </p>
+    </form>
+  </div>
+
+  <script>
+    const previewEl = document.getElementById('style-name-preview');
+    const colorEl = document.getElementById('style-color');
+    const fontEl = document.getElementById('style-font');
+    const authBar = document.getElementById('auth-bar');
+
+    function updatePreview() {
+      previewEl.style.color = colorEl.value;
+      previewEl.style.fontFamily = fontEl.value;
+    }
+    colorEl.addEventListener('input', updatePreview);
+    fontEl.addEventListener('change', updatePreview);
+
+    // Load current user
+    fetch('/api/bootstrap', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.user) {
+          window.location.href = '/login.html';
+          return;
+        }
+        previewEl.textContent = data.user.username;
+        colorEl.value = data.user.name_color || '#000000';
+        fontEl.value = data.user.name_font || 'Georgia, serif';
+        updatePreview();
+        authBar.textContent = data.user.username;
+      })
+      .catch(() => {
+        window.location.href = '/login.html';
+      });
+
+    document.getElementById('style-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('style-error');
+      errEl.hidden = true;
+      try {
+        const res = await fetch('/api/auth/profile', {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name_color: colorEl.value,
+            name_font: fontEl.value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Save failed.');
+        window.location.href = '/';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>

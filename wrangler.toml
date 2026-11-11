@@ -2,6 +2,10 @@ name = "coworking-hub"
 main = "src/worker.js"
 compatibility_date = "2026-11-01"
 
+routes = [
+  { pattern = "coworking.jakewel.ch", custom_domain = true }
+]
+
 # Serves static HTML/CSS/JS from ./public and routes /api/* through src/worker.js
 [assets]
 directory = "./public"
@@ -9,21 +13,10 @@ binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
 # Cloudflare D1 SQLite Database
-# Replace database_id with the UUID output by: npx wrangler d1 create coworking-db
 [[d1_databases]]
 binding = "DB"
 database_name = "coworking-db"
 database_id = "3d37f932-c9ae-436c-af14-570e004e5ff3"
 
 [vars]
-# Visibility for newly created Are.na channels: "closed" (recommended), "public", or "private"
 ARENA_CHANNEL_STATUS = "closed"
-
-# Secrets (set via CLI so they are never committed in code):
-#   npx wrangler secret put ARENA_ACCESS_TOKEN
-#   npx wrangler secret put SIGNUP_PASSCODE      (optional: require a group passcode to sign up)
-
-# Optional: Uncomment below if you ever want to store large file drops (>15 MB) in Cloudflare R2 instead of D1
-# [[r2_buckets]]
-# binding = "FILES_BUCKET"
-# bucket_name = "coworking-files"

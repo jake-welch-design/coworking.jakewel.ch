@@ -104,6 +104,18 @@ const SCHEMA_STATEMENTS = [
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL,
     PRIMARY KEY (event_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS direct_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    to_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_dm_participants ON direct_messages(
+    CASE WHEN from_user_id < to_user_id THEN from_user_id ELSE to_user_id END,
+    CASE WHEN from_user_id < to_user_id THEN to_user_id ELSE from_user_id END,
+    id ASC
   )`
 ];
 
@@ -339,6 +351,35 @@ async function fetchFolderBlocks(db, folderId) {
   return results || [];
 }
 
+async function fetchUsers(db) {
+  const { results } = await db
+    .prepare(
+      `SELECT id, username, name_color, name_font FROM users ORDER BY username COLLATE NOCASE ASC`
+    )
+    .all();
+  return results || [];
+}
+
+async function fetchDMs(db, userA, userB, limit = 100) {
+  const lo = Math.min(userA, userB);
+  const hi = Math.max(userA, userB);
+  const { results } = await db
+    .prepare(
+      `SELECT dm.id, dm.body, dm.created_at,
+              dm.from_user_id, dm.to_user_id,
+              u.username, u.name_color, u.name_font
+       FROM direct_messages dm
+       JOIN users u ON u.id = dm.from_user_id
+       WHERE (dm.from_user_id = ? AND dm.to_user_id = ?)
+          OR (dm.from_user_id = ? AND dm.to_user_id = ?)
+       ORDER BY dm.id ASC
+       LIMIT ?`
+    )
+    .bind(lo, hi, hi, lo, limit)
+    .all();
+  return results || [];
+}
+
 async function fetchEvents(db) {
   // Return events from 60 days ago onward so calendar month navigation has context
   const cutoff = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
@@ -405,11 +446,12 @@ async function computeStateToken(db) {
          (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM blocks) AS b,
          (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM events) AS e,
          (SELECT COUNT(*) FROM event_rsvps) AS r,
-         (SELECT COALESCE(MAX(id), 0) FROM users) AS u`
+         (SELECT COALESCE(MAX(id), 0) FROM users) AS u,
+         (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm`
     )
     .first();
   if (!row) return '0';
-  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}`;
+  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}`;
 }
 
 // --- Are.na API v2 Helpers ---
@@ -756,15 +798,17 @@ export default {
 
       // 2. Bootstrap Endpoint
       if (method === 'GET' && pathname === '/api/bootstrap') {
-        const [user, messages, folders, events, stateToken] = await Promise.all([
+        const [user, messages, folders, events, stateToken, users] = await Promise.all([
           getCurrentUser(request, env.DB),
           fetchMessages(env.DB, 0, 150),
           fetchFolders(env.DB),
           fetchEvents(env.DB),
-          computeStateToken(env.DB)
+          computeStateToken(env.DB),
+          fetchUsers(env.DB)
         ]);
         return jsonResponse({
           user,
+          users,
           config: {
             arenaConfigured: Boolean(env.ARENA_ACCESS_TOKEN),
             passcodeRequired: Boolean(env.SIGNUP_PASSCODE),
@@ -1318,6 +1362,50 @@ export default {
         await env.DB.prepare(`DELETE FROM events WHERE id = ?`).bind(eventId).run();
         const events = await fetchEvents(env.DB);
         return jsonResponse({ events, nextEvent: computeNextEvent(events) });
+      }
+
+      // 13. User Directory
+      if (method === 'GET' && pathname === '/api/users') {
+        const users = await fetchUsers(env.DB);
+        return jsonResponse({ users });
+      }
+
+      // 14. Direct Messages
+      const dmMatch = pathname.match(/^\/api\/dm\/(\d+)$/);
+      if (dmMatch) {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const otherUserId = parseInt(dmMatch[1], 10);
+
+        if (method === 'GET') {
+          const messages = await fetchDMs(env.DB, user.id, otherUserId);
+          return jsonResponse({ messages });
+        }
+
+        if (method === 'POST') {
+          const body = await request.json().catch(() => ({}));
+          const text = String(body.body || '').trim();
+          if (!text) return errorResponse('Empty message.');
+          if (text.length > 2000) return errorResponse('Message exceeds 2000 characters.');
+
+          const nowIso = new Date().toISOString();
+          const res = await env.DB
+            .prepare(`INSERT INTO direct_messages (from_user_id, to_user_id, body, created_at) VALUES (?, ?, ?, ?)`)
+            .bind(user.id, otherUserId, text, nowIso)
+            .run();
+
+          const created = {
+            id: res.meta?.last_row_id,
+            body: text,
+            created_at: nowIso,
+            from_user_id: user.id,
+            to_user_id: otherUserId,
+            username: user.username,
+            name_color: user.name_color,
+            name_font: user.name_font
+          };
+          return jsonResponse({ message: created }, 201);
+        }
       }
 
       return errorResponse('API endpoint not found.', 404);

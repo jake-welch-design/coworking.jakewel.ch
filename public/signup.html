@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign up — Coworking</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header id="site-header">
+    <strong><a href="/">Coworking</a></strong>
+    <span><a href="/login.html">Log in</a></span>
+  </header>
+  <hr />
+
+  <div class="page-form">
+    <h2>Sign up</h2>
+    <form id="signup-form">
+      <p>
+        <label>Email<br />
+          <input type="email" id="signup-email" autocomplete="email" required />
+        </label>
+      </p>
+      <p>
+        <label>Username<br />
+          <input type="text" id="signup-username" autocomplete="username" maxlength="24" required />
+        </label>
+      </p>
+      <p>
+        <label>Password<br />
+          <input type="password" id="signup-password" autocomplete="new-password" minlength="6" required />
+        </label>
+      </p>
+      <p id="signup-passcode-row" hidden>
+        <label>Passcode<br />
+          <input type="password" id="signup-passcode" />
+        </label>
+      </p>
+      <p>
+        <label>Name color: <input type="color" id="signup-color" value="#0044cc" /></label>
+      </p>
+      <p>
+        <label>Name font:
+          <select id="signup-font">
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Courier New', monospace">Courier New</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+            <option value="Impact, sans-serif">Impact</option>
+            <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+            <option value="Palatino, 'Palatino Linotype', serif">Palatino</option>
+            <option value="Garamond, serif">Garamond</option>
+            <option value="'Arial Black', sans-serif">Arial Black</option>
+            <option value="Monaco, Consolas, monospace">Monaco</option>
+            <option value="'Brush Script MT', cursive">Brush Script</option>
+          </select>
+        </label>
+      </p>
+      <p>Preview: <span id="signup-name-preview">username</span></p>
+      <p id="signup-error" hidden></p>
+      <p><button type="submit">Sign up</button></p>
+    </form>
+    <p><a href="/login.html">Already have an account?</a></p>
+  </div>
+
+  <script>
+    const previewEl = document.getElementById('signup-name-preview');
+    const usernameEl = document.getElementById('signup-username');
+    const colorEl = document.getElementById('signup-color');
+    const fontEl = document.getElementById('signup-font');
+
+    function updatePreview() {
+      previewEl.textContent = usernameEl.value.trim() || 'username';
+      previewEl.style.color = colorEl.value;
+      previewEl.style.fontFamily = fontEl.value;
+    }
+    usernameEl.addEventListener('input', updatePreview);
+    colorEl.addEventListener('input', updatePreview);
+    fontEl.addEventListener('change', updatePreview);
+
+    // Check if passcode is required
+    fetch('/api/bootstrap', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.config?.passcodeRequired) {
+          document.getElementById('signup-passcode-row').hidden = false;
+        }
+      })
+      .catch(() => {});
+
+    document.getElementById('signup-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('signup-error');
+      errEl.hidden = true;
+      try {
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('signup-email').value.trim(),
+            username: usernameEl.value.trim(),
+            password: document.getElementById('signup-password').value,
+            passcode: document.getElementById('signup-passcode')?.value || '',
+            name_color: colorEl.value,
+            name_font: fontEl.value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Signup failed.');
+        window.location.href = '/';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>

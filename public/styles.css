@@ -1,65 +1,249 @@
-/* Minimal layout-only CSS — native HTML elements, black & white, Arial */
+/* Coworking — Times New Roman, beveled containers */
 
-body {
-  font-family: Arial, sans-serif;
-  background: #ffffff;
-  color: #000000;
-  margin: 10px;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-a {
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Arial", Times, serif;
+  font-size: 14px;
+  background: white;
   color: #000000;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+a:visited {
+  color: LinkText;
 }
 
 hr {
   border: none;
-  border-top: 1px solid #000000;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #ffffff;
+  margin: 0;
 }
 
 [hidden] {
   display: none !important;
 }
 
+/* Beveled button style */
+button,
+.bevel-btn {
+  font-family: "Times New Roman", Times, serif;
+  font-size: inherit;
+  background: white;
+  color: #000000;
+  padding: 3px 10px;
+  cursor: pointer;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #404040;
+  border-right: 2px solid #404040;
+  box-shadow:
+    inset 1px 1px 0 #dfdfdf,
+    1px 1px 0 #000000;
+}
+
+button:hover,
+.bevel-btn:hover {
+  border-top: 2px solid #404040;
+  border-left: 2px solid #404040;
+  border-bottom: 2px solid #ffffff;
+  border-right: 2px solid #ffffff;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    1px 1px 0 #000000;
+}
+
+button:active,
+.bevel-btn:active {
+  border-top: 2px solid #404040;
+  border-left: 2px solid #404040;
+  border-bottom: 2px solid #ffffff;
+  border-right: 2px solid #ffffff;
+  box-shadow: inset 2px 2px 0 #808080;
+  padding: 4px 9px 2px 11px;
+}
+
+/* Beveled inset (for inputs, chat log) */
+input[type="text"],
+input[type="date"],
+input[type="time"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  font-family: "Times New Roman", Times, serif;
+  font-size: inherit;
+  background: #ffffff;
+  color: #000000;
+  border-top: 2px solid #808080;
+  border-left: 2px solid #808080;
+  border-bottom: 2px solid #e6e6e6;
+  border-right: 2px solid #e6e6e6;
+  box-shadow: inset 1px 1px 0 #404040;
+  padding: 3px 4px;
+}
+
+/* Pane style: white, borderless, soft drop shadow */
+.panel {
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
 #site-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  padding: 6px 8px;
+  background: white;
+  /* border-bottom: 2px solid #808080; */
 }
 
 #next-call-banner {
-  border: 1px solid #000000;
-  padding: 6px 8px;
-  margin: 8px 0;
+  display: block;
+  width: 100%;
+  background: #2a7517;
+  color: #ffffff;
+  padding: 4px 8px;
+  margin: 0;
+  font-weight: bold;
+}
+
+#next-call-banner .banner-item {
+  margin-right: 6em;
+}
+
+#next-call-banner a {
+  color: #ffffff;
 }
 
 #mobile-nav-bar {
   display: none;
+  padding: 6px 8px;
+  margin: 0;
 }
 
 #workspace {
   display: grid;
-  grid-template-columns: 250px 1fr 300px;
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: 25% 25% 1fr;
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px;
 }
 
 #resources-pane,
-#chat-pane {
-  border-right: 1px solid #000000;
-  padding-right: 16px;
+#middle-pane,
+#lounge-pane {
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Lounge: chat log fills the pane, input pinned to the bottom */
+#lounge-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Pane titles: black label, white text */
+.pane-title {
+  display: inline-block;
+  background: #000000;
+  color: #ffffff;
+  padding: 2px 8px;
+}
+
+#lounge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#lounge-header p {
+  margin: 0;
+}
+
+#radio-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#nts-logo {
+  display: block;
+}
+
+/* Chat tabs — tab strip style */
+#chat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 8px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Tabs overlap the chat box's top border by 1px so their background covers it */
+.chat-tab {
+  cursor: pointer;
+  padding: 3px 10px;
+  display: inline-block;
+  background: #ffffff;
+  border: 1px solid #000000;
+  border-bottom: none;
+  margin-bottom: -1px;
+  text-decoration: none;
+}
+
+.chat-tab.active {
+  font-weight: bold;
+  padding-top: 5px;
+}
+
+.chat-tab-close {
+  cursor: pointer;
+  margin-left: 4px;
+  text-decoration: none;
 }
 
 #chat-messages {
-  height: 68vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  background: #ffffff;
   border: 1px solid #000000;
-  padding: 8px;
-  margin-bottom: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
 }
 
 #chat-form {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  margin-top: auto;
 }
 
 #chat-input {
@@ -72,7 +256,7 @@ hr {
 #folder-slug-input,
 #event-title-input,
 #event-notes-input {
-  width: 95%;
+  width: 90%;
 }
 
 .drag-over {
@@ -88,8 +272,89 @@ hr {
 blockquote {
   margin: 4px 0;
   padding-left: 8px;
-  border-left: 1px solid #000000;
+  border-left: 2px solid #808080;
   white-space: pre-wrap;
+}
+
+fieldset {
+  background: #ffffff;
+  border: none;
+  margin: 8px 0;
+  padding: 8px 0;
+}
+
+legend {
+  padding: 0;
+  font-weight: bold;
+}
+
+.page-form {
+  max-width: 400px;
+  padding: 14px;
+}
+
+#directory-list li {
+  margin-bottom: 4px;
+}
+
+details > summary {
+  cursor: pointer;
+}
+
+/* Summary toggles styled as buttons */
+summary.bevel-btn {
+  display: inline-block;
+  list-style: none;
+  margin-bottom: 6px;
+}
+
+summary.bevel-btn::-webkit-details-marker {
+  display: none;
+}
+
+#cal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#schedule-call-btn {
+  margin-left: auto;
+}
+
+#cal-month-label {
+  min-width: 8em;
+  text-align: center;
+}
+
+/* Calendar table */
+#calendar-table {
+  border-collapse: collapse;
+  border: 2px solid #808080;
+  table-layout: fixed;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+}
+
+#calendar-table th {
+  background: black;
+  color: #ffffff;
+  padding: 2px 6px;
+  font-weight: normal;
+}
+
+#calendar-table td {
+  padding: 0;
+  text-align: center;
+}
+
+/* Square day cells */
+#calendar-table td > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
 }
 
 @media (max-width: 768px) {
@@ -97,26 +362,33 @@ blockquote {
     display: block;
   }
 
+  body {
+    height: auto;
+  }
+
   #workspace {
     display: block;
+    padding: 16px;
+    gap: 0;
   }
 
   #resources-pane,
-  #chat-pane {
-    border-right: none;
-    padding-right: 0;
+  #middle-pane,
+  #lounge-pane {
+    margin-bottom: 16px;
   }
 
   #chat-messages {
-    height: 60vh;
+    flex: none;
+    height: 50vh;
   }
 
-  #workspace[data-mobile-view="chat"] #resources-pane,
-  #workspace[data-mobile-view="chat"] #calendar-pane,
-  #workspace[data-mobile-view="resources"] #chat-pane,
-  #workspace[data-mobile-view="resources"] #calendar-pane,
-  #workspace[data-mobile-view="calendar"] #chat-pane,
-  #workspace[data-mobile-view="calendar"] #resources-pane {
+  #workspace[data-mobile-view="lounge"] #resources-pane,
+  #workspace[data-mobile-view="lounge"] #middle-pane,
+  #workspace[data-mobile-view="resources"] #middle-pane,
+  #workspace[data-mobile-view="resources"] #lounge-pane,
+  #workspace[data-mobile-view="calendar"] #resources-pane,
+  #workspace[data-mobile-view="calendar"] #lounge-pane {
     display: none;
   }
 }
