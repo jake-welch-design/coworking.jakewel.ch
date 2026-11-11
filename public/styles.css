@@ -673,7 +673,9 @@ button.chat-delete {
 }
 
 button.chat-delete:hover,
+button.chat-delete:active,
 button.chat-delete:focus-visible {
+  padding: 0 4px;
   color: #000000;
   border: none;
   box-shadow: none;
