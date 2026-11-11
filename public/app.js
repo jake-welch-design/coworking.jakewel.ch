@@ -43,6 +43,8 @@
     blockInput: document.getElementById('block-input'),
     blockTitleInput: document.getElementById('block-title-input'),
     blockFileInput: document.getElementById('block-file-input'),
+    blockNoteInput: document.getElementById('block-note-input'),
+    activeFolderTitle: document.getElementById('active-folder-title'),
     addBlockSubmitBtn: document.getElementById('add-block-submit-btn'),
     blockUploadStatus: document.getElementById('block-upload-status'),
     blockFormError: document.getElementById('block-form-error'),
@@ -429,39 +431,56 @@
       const li = document.createElement('li');
       li.appendChild(actionLink(f.title, () => openFolder(f.id)));
       li.appendChild(document.createTextNode(` (${f.block_count||0})`));
-      if (f.creator_username) {
-        li.appendChild(document.createTextNode(' — '));
-        li.appendChild(badge(f.creator_username, f.creator_color, f.creator_font));
-      }
       attachDrop(li, async (p) => { await dropInFolder(f.id, p); await openFolder(f.id); });
       el.foldersList.appendChild(li);
     }
   }
 
+  // Where clicking a block goes: its external link if it has one, otherwise the block on Are.na
+  function blockHref(b) {
+    const src = b.source_url || '';
+    const isOwnFile = src.startsWith(`${location.origin}/api/files/`) || src.startsWith('/api/files/');
+    if (src && !isOwnFile && b.block_type !== 'image') return src;
+    if (b.arena_block_id) return `https://www.are.na/block/${b.arena_block_id}`;
+    return src || b.image_url || null;
+  }
+
+  function newTabLink(href, text) {
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    if (text != null) a.textContent = text;
+    return a;
+  }
+
   function blockLI(b) {
     const li = document.createElement('li');
+    const href = blockHref(b);
     if (b.image_url) {
-      const a = document.createElement('a');
-      a.href = b.source_url || b.image_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      const a = newTabLink(href || b.image_url);
       const img = document.createElement('img');
       img.className = 'block-thumb'; img.src = b.image_url; img.alt = b.title||''; img.loading = 'lazy';
       a.appendChild(img); li.appendChild(a);
     }
     if (b.block_type === 'text') {
-      if (b.title) { const s = document.createElement('strong'); s.textContent = b.title; li.appendChild(s); }
+      if (b.title) {
+        const s = document.createElement('strong');
+        s.appendChild(href ? newTabLink(href, b.title) : document.createTextNode(b.title));
+        li.appendChild(s);
+      }
       const q = document.createElement('blockquote'); linkify(q, b.content||''); li.appendChild(q);
+      if (!b.title && href) { li.appendChild(newTabLink(href, 'Open on Are.na')); li.appendChild(document.createElement('br')); }
     } else if (b.block_type === 'file') {
-      const a = document.createElement('a');
-      a.href = b.source_url||'#'; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      a.textContent = `${b.title||b.file_name||'File'}${b.file_size ? ` (${fmtBytes(b.file_size)})` : ''}`;
-      li.appendChild(a); li.appendChild(document.createElement('br'));
-    } else if (b.source_url) {
-      const a = document.createElement('a');
-      a.href = b.source_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      a.textContent = b.title || b.source_url;
-      li.appendChild(a); li.appendChild(document.createElement('br'));
+      const label = `${b.title||b.file_name||'File'}${b.file_size ? ` (${fmtBytes(b.file_size)})` : ''}`;
+      li.appendChild(href ? newTabLink(href, label) : document.createTextNode(label));
+      li.appendChild(document.createElement('br'));
+    } else if (href) {
+      li.appendChild(newTabLink(href, b.title || b.source_url || 'Open on Are.na'));
+      li.appendChild(document.createElement('br'));
     } else if (b.title) {
       li.appendChild(document.createTextNode(b.title)); li.appendChild(document.createElement('br'));
+    }
+    if (b.note) {
+      const n = document.createElement('p'); n.className = 'block-note'; linkify(n, b.note); li.appendChild(n);
     }
     const sm = document.createElement('small');
     if (b.creator_username) sm.appendChild(badge(b.creator_username, b.creator_color, b.creator_font));
@@ -485,10 +504,9 @@
     const f = state.folders.find(f => f.id === state.activeFolderId);
     if (!f) { state.activeFolderId = null; el.foldersListView.hidden = false; el.folderDetailView.hidden = true; return; }
     el.foldersListView.hidden = true; el.folderDetailView.hidden = false;
+    el.activeFolderTitle.textContent = f.title;
     el.activeFolderMeta.innerHTML = '';
     const p = document.createElement('p');
-    const s = document.createElement('strong'); s.textContent = f.title; p.appendChild(s);
-    p.appendChild(document.createElement('br'));
     const sm = document.createElement('small');
     if (f.creator_username) sm.appendChild(badge(f.creator_username, f.creator_color, f.creator_font));
     if (f.arena_channel_slug) {
@@ -537,7 +555,7 @@
     });
   }
 
-  async function dropInFolder(id, { files, text, title }) {
+  async function dropInFolder(id, { files, text, title, note }) {
     el.blockFormError.hidden = true;
     el.blockUploadStatus.textContent = 'Saving...'; el.blockUploadStatus.hidden = false;
     el.addBlockSubmitBtn.disabled = true;
@@ -547,9 +565,10 @@
         const form = new FormData();
         for (const f of files) form.append('file', f);
         if (title) form.append('title', title);
+        if (note) form.append('note', note);
         d = await api(`/api/folders/${id}/blocks`, { method:'POST', body: form });
       } else if (text) {
-        d = await api(`/api/folders/${id}/blocks`, { method:'POST', body: { input: text, title: title||'' } });
+        d = await api(`/api/folders/${id}/blocks`, { method:'POST', body: { input: text, title: title||'', note: note||'' } });
       } else return;
       if (d.folders) state.folders = d.folders;
       if (state.activeFolderId === id && d.blocks) state.activeFolderBlocks = d.blocks;
@@ -724,15 +743,15 @@
 
     attachDrop(el.blockDropzone, async p => {
       if (!state.activeFolderId) return;
-      await dropInFolder(state.activeFolderId, { ...p, title: el.blockTitleInput.value.trim() });
-      el.blockTitleInput.value = '';
+      await dropInFolder(state.activeFolderId, { ...p, title: el.blockTitleInput.value.trim(), note: el.blockNoteInput.value.trim() });
+      el.blockTitleInput.value = ''; el.blockNoteInput.value = '';
     });
     el.blockFileInput.addEventListener('change', async () => {
       if (!requireAuth()) { el.blockFileInput.value = ''; return; }
       const files = Array.from(el.blockFileInput.files||[]);
       if (files.length && state.activeFolderId) {
-        await dropInFolder(state.activeFolderId, { files, title: el.blockTitleInput.value.trim() });
-        el.blockFileInput.value = ''; el.blockTitleInput.value = '';
+        await dropInFolder(state.activeFolderId, { files, title: el.blockTitleInput.value.trim(), note: el.blockNoteInput.value.trim() });
+        el.blockFileInput.value = ''; el.blockTitleInput.value = ''; el.blockNoteInput.value = '';
       }
     });
     el.blockDropzone.addEventListener('paste', async e => {
@@ -740,16 +759,16 @@
       if (files.length && state.activeFolderId) {
         e.preventDefault();
         if (!requireAuth()) return;
-        await dropInFolder(state.activeFolderId, { files, title: el.blockTitleInput.value.trim() });
+        await dropInFolder(state.activeFolderId, { files, title: el.blockTitleInput.value.trim(), note: el.blockNoteInput.value.trim() });
       }
     });
     el.addBlockForm.addEventListener('submit', async e => {
       e.preventDefault();
       if (!requireAuth() || !state.activeFolderId) return;
-      const text = el.blockInput.value.trim(), title = el.blockTitleInput.value.trim();
+      const text = el.blockInput.value.trim(), title = el.blockTitleInput.value.trim(), note = el.blockNoteInput.value.trim();
       if (!text) return;
-      await dropInFolder(state.activeFolderId, { text, title });
-      el.blockInput.value = ''; el.blockTitleInput.value = '';
+      await dropInFolder(state.activeFolderId, { text, title, note });
+      el.blockInput.value = ''; el.blockTitleInput.value = ''; el.blockNoteInput.value = '';
     });
 
     document.getElementById('schedule-call-btn').addEventListener('click', () => {

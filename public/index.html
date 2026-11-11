@@ -53,9 +53,10 @@
         </div>
 
         <div id="folder-detail-view" hidden>
-          <p>
-            <a href="#" id="back-to-folders-link">&larr; Resources</a>
-            &middot; <a href="#" id="sync-folder-link">Sync</a>
+          <h2 class="pane-title" id="active-folder-title"></h2>
+          <p id="folder-nav">
+            <button type="button" id="back-to-folders-link">&larr; Resources</button>
+            <button type="button" id="sync-folder-link">Sync</button>
           </p>
           <div id="active-folder-meta"></div>
 
@@ -76,6 +77,14 @@
                   placeholder="Title (optional)"
                   maxlength="140"
                 />
+              </p>
+              <p>
+                <textarea
+                  id="block-note-input"
+                  rows="2"
+                  placeholder="Note (optional)"
+                  maxlength="2000"
+                ></textarea>
               </p>
               <p><input type="file" id="block-file-input" multiple /></p>
               <p>

@@ -119,12 +119,24 @@ const SCHEMA_STATEMENTS = [
   )`
 ];
 
+// Column additions for existing databases; "duplicate column" errors mean it's already applied
+const COLUMN_MIGRATIONS = [
+  `ALTER TABLE blocks ADD COLUMN note TEXT`
+];
+
 let schemaInitialized = false;
 
 async function ensureSchema(db) {
   if (schemaInitialized) return;
   for (const sql of SCHEMA_STATEMENTS) {
     await db.prepare(sql).run();
+  }
+  for (const sql of COLUMN_MIGRATIONS) {
+    try {
+      await db.prepare(sql).run();
+    } catch (err) {
+      if (!/duplicate column/i.test(String(err?.message || err))) throw err;
+    }
   }
   schemaInitialized = true;
 }
@@ -339,7 +351,7 @@ async function fetchFolderBlocks(db, folderId) {
     .prepare(
       `SELECT b.id, b.folder_id, b.arena_block_id, b.block_type, b.title, b.content,
               b.source_url, b.image_url, b.file_name, b.mime_type, b.file_size,
-              b.created_by, b.arena_author, b.created_at,
+              b.created_by, b.arena_author, b.created_at, b.note,
               u.username AS creator_username, u.name_color AS creator_color, u.name_font AS creator_font
        FROM blocks b
        LEFT JOIN users u ON u.id = b.created_by
@@ -454,7 +466,15 @@ async function computeStateToken(db) {
   return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}`;
 }
 
-// --- Are.na API v2 Helpers ---
+// --- Are.na API Helpers ---
+
+// Are.na API v3 — https://www.are.na/developers
+const ARENA_API = 'https://api.are.na/v3';
+
+function arenaToken(env) {
+  // Tolerate stray whitespace/newlines or a pasted "Bearer " prefix in the secret
+  return String(env.ARENA_ACCESS_TOKEN || '').trim().replace(/^Bearer\s+/i, '');
+}
 
 function arenaHeaders(env) {
   const headers = {
@@ -462,10 +482,46 @@ function arenaHeaders(env) {
     'Content-Type': 'application/json',
     'User-Agent': 'CoworkingHub/1.0'
   };
-  if (env.ARENA_ACCESS_TOKEN) {
-    headers.Authorization = `Bearer ${env.ARENA_ACCESS_TOKEN}`;
-  }
+  const token = arenaToken(env);
+  if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
+}
+
+function arenaFetch(path, env, options = {}) {
+  return fetch(`${ARENA_API}${path}`, { ...options, headers: arenaHeaders(env) });
+}
+
+async function arenaError(res, action) {
+  const text = await res.text().catch(() => '');
+  let detail = text.slice(0, 180);
+  try {
+    const j = JSON.parse(text);
+    detail = j.details?.message || j.error || j.message || detail;
+  } catch {}
+  let hint = '';
+  if (res.status === 401) hint = ' Check that ARENA_ACCESS_TOKEN is a valid personal access token.';
+  if (res.status === 403) hint = ' The token needs the "write" access level.';
+  return new Error(`Are.na ${action} failed (${res.status}): ${detail}${hint}`);
+}
+
+// Best available image URL on a v3 block
+function arenaImage(item) {
+  const img = item?.image;
+  return img?.large?.src || img?.medium?.src || img?.src || null;
+}
+
+// Block description text from Are.na (v3 returns markdown/plain/html variants)
+function arenaDescription(item) {
+  const d = item?.description;
+  if (typeof d === 'string') return d || null;
+  return d?.markdown || d?.plain || null;
+}
+
+// Plain text body of a v3 Text block
+function arenaText(item) {
+  const c = item?.content;
+  if (typeof c === 'string') return c;
+  return c?.markdown ?? c?.plain ?? null;
 }
 
 function extractArenaSlug(input) {
@@ -485,44 +541,36 @@ function extractArenaSlug(input) {
 }
 
 async function createArenaChannel(title, env) {
-  if (!env.ARENA_ACCESS_TOKEN) return null;
-  const preferredStatus = env.ARENA_CHANNEL_STATUS || 'closed';
+  if (!arenaToken(env)) return null;
+  const visibility = env.ARENA_CHANNEL_STATUS || 'closed';
 
-  let res = await fetch('https://api.are.na/v2/channels', {
+  let res = await arenaFetch('/channels', env, {
     method: 'POST',
-    headers: arenaHeaders(env),
-    body: JSON.stringify({ title, status: preferredStatus })
+    body: JSON.stringify({ title, visibility })
   });
 
-  // Free Are.na accounts limit private channels; fall back to "closed" automatically
-  if (!res.ok && preferredStatus === 'private') {
-    res = await fetch('https://api.are.na/v2/channels', {
+  // If private isn't allowed for this account, fall back to "closed" (auth errors are not retried)
+  if (!res.ok && visibility === 'private' && ![401, 403].includes(res.status)) {
+    res = await arenaFetch('/channels', env, {
       method: 'POST',
-      headers: arenaHeaders(env),
-      body: JSON.stringify({ title, status: 'closed' })
+      body: JSON.stringify({ title, visibility: 'closed' })
     });
   }
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Are.na channel creation failed (${res.status}): ${text.slice(0, 180)}`);
-  }
+  if (!res.ok) throw await arenaError(res, 'channel creation');
   return await res.json();
 }
 
 async function getArenaChannel(slug, env) {
-  const res = await fetch(`https://api.are.na/v2/channels/${encodeURIComponent(slug)}?per=1`, {
-    method: 'GET',
-    headers: arenaHeaders(env)
-  });
+  const res = await arenaFetch(`/channels/${encodeURIComponent(slug)}`, env, { method: 'GET' });
   if (!res.ok) {
     throw new Error(`Could not find Are.na channel "${slug}" (${res.status}).`);
   }
   return await res.json();
 }
 
-async function pushBlockToArena({ slug, sourceUrl, content, title, username }, env) {
-  if (!env.ARENA_ACCESS_TOKEN || !slug) return null;
+async function pushBlockToArena({ slug, sourceUrl, content, title, note, username }, env) {
+  if (!arenaToken(env) || !slug) return null;
 
   // Are.na servers cannot fetch localhost URLs during local testing
   if (sourceUrl) {
@@ -536,63 +584,79 @@ async function pushBlockToArena({ slug, sourceUrl, content, title, username }, e
     }
   }
 
-  const payload = sourceUrl ? { source: sourceUrl } : { content: content || '' };
-  const res = await fetch(`https://api.are.na/v2/channels/${encodeURIComponent(slug)}/blocks`, {
-    method: 'POST',
-    headers: arenaHeaders(env),
-    body: JSON.stringify(payload)
-  });
+  // v3: one call creates the block (URL or text in `value`) and connects it to the channel
+  const payload = {
+    value: sourceUrl || content || '',
+    channels: [{ id: slug }]
+  };
+  if (title) payload.title = title;
+  // The note becomes the block's description on Are.na, followed by who added it
+  const credit = username ? `Added by ${username}` : '';
+  const description = [note, credit].filter(Boolean).join('\n\n');
+  if (description) payload.description = description;
 
+  const res = await arenaFetch('/blocks', env, { method: 'POST', body: JSON.stringify(payload) });
   if (!res.ok) {
-    console.warn('Are.na block push returned non-OK:', res.status);
+    console.warn((await arenaError(res, 'block push')).message);
     return null;
   }
+  return await res.json();
+}
 
-  const created = await res.json();
-  if (created && created.id && (title || username)) {
-    const metaBody = {
-      description: `Added by ${username}`
-    };
-    if (title) metaBody.title = title;
-    await fetch(`https://api.are.na/v2/blocks/${created.id}`, {
-      method: 'PUT',
-      headers: arenaHeaders(env),
-      body: JSON.stringify(metaBody)
-    }).catch(() => {});
+// Contents listing items; tolerate either top-level key
+function arenaContentsItems(data) {
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.contents)) return data.contents;
+  return [];
+}
+
+// v3 removes a block from a channel by its connection id, which only the contents listing exposes
+async function removeBlockFromArena(slug, blockId, env) {
+  for (let page = 1; page <= 20; page++) {
+    const res = await arenaFetch(
+      `/channels/${encodeURIComponent(slug)}/contents?per=100&page=${page}`,
+      env,
+      { method: 'GET' }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const match = arenaContentsItems(data).find((i) => i?.id === blockId && i?.type !== 'Channel');
+    if (match?.connection?.id) {
+      await arenaFetch(`/connections/${match.connection.id}`, env, { method: 'DELETE' });
+      return;
+    }
+    if (!data?.meta?.has_more_pages) return;
   }
-
-  return created;
 }
 
 async function syncFolderWithArena(folder, db, env) {
   if (!folder.arena_channel_slug) return;
   try {
-    const res = await fetch(
-      `https://api.are.na/v2/channels/${encodeURIComponent(folder.arena_channel_slug)}/contents?per=100`,
-      {
-        method: 'GET',
-        headers: arenaHeaders(env)
-      }
+    const res = await arenaFetch(
+      `/channels/${encodeURIComponent(folder.arena_channel_slug)}/contents?per=100`,
+      env,
+      { method: 'GET' }
     );
     if (!res.ok) return;
-    const data = await res.json();
-    const contents = Array.isArray(data?.contents) ? data.contents : [];
+    const contents = arenaContentsItems(await res.json());
 
     for (const item of contents) {
       if (!item || !item.id) continue;
+      const isChannel = item.type === 'Channel' || item.base_type === 'Channel';
+      if (item.type === 'PendingBlock') continue;
 
       const existing = await db
         .prepare(`SELECT id, title, image_url, source_url FROM blocks WHERE folder_id = ? AND arena_block_id = ?`)
         .bind(folder.id, item.id)
         .first();
 
-      const itemImage = item.image?.display?.url || item.image?.original?.url || null;
-      const itemTitle = item.title || item.generated_title || null;
+      const itemImage = arenaImage(item);
+      const itemTitle = item.title || null;
       const itemSource =
         item.source?.url ||
         item.attachment?.url ||
-        (item.base_class === 'Channel' && item.slug
-          ? `https://www.are.na/${item.user?.slug || 'channel'}/${item.slug}`
+        (isChannel && item.slug
+          ? `https://www.are.na/${item.owner?.slug || 'channel'}/${item.slug}`
           : null);
 
       if (existing) {
@@ -612,30 +676,32 @@ async function syncFolderWithArena(folder, db, env) {
       }
 
       let blockType = 'link';
-      if (item.class === 'Text') blockType = 'text';
-      else if (item.class === 'Image') blockType = 'image';
-      else if (item.class === 'Attachment') blockType = 'file';
+      if (item.type === 'Text') blockType = 'text';
+      else if (item.type === 'Image') blockType = 'image';
+      else if (item.type === 'Attachment') blockType = 'file';
 
-      const authorName = item.user?.username || item.user?.full_name || 'Are.na';
+      const author = item.user || item.owner;
+      const authorName = author?.username || author?.name || author?.slug || 'Are.na';
       await db
         .prepare(
           `INSERT OR IGNORE INTO blocks (
              folder_id, arena_block_id, block_type, title, content,
-             source_url, image_url, file_name, mime_type, created_by, arena_author, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+             source_url, image_url, file_name, mime_type, created_by, arena_author, created_at, note
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`
         )
         .bind(
           folder.id,
           item.id,
           blockType,
           itemTitle,
-          item.content || null,
+          blockType === 'text' ? arenaText(item) : null,
           itemSource,
           itemImage,
-          item.attachment?.file_name || item.image?.filename || null,
+          item.attachment?.filename || item.image?.filename || null,
           item.attachment?.content_type || item.image?.content_type || null,
           authorName,
-          item.created_at || new Date().toISOString()
+          item.created_at || new Date().toISOString(),
+          arenaDescription(item)
         )
         .run();
     }
@@ -810,7 +876,7 @@ export default {
           user,
           users,
           config: {
-            arenaConfigured: Boolean(env.ARENA_ACCESS_TOKEN),
+            arenaConfigured: Boolean(arenaToken(env)),
             passcodeRequired: Boolean(env.SIGNUP_PASSCODE),
             allowedFonts: ALLOWED_FONTS
           },
@@ -1021,15 +1087,15 @@ export default {
             const channel = await getArenaChannel(existingSlug, env);
             arenaId = channel.id || null;
             arenaSlug = channel.slug || existingSlug;
-            arenaStatus = channel.status || 'closed';
+            arenaStatus = channel.visibility || 'closed';
             if (!title) title = channel.title || existingSlug;
-          } else if (env.ARENA_ACCESS_TOKEN) {
+          } else if (arenaToken(env)) {
             try {
               const channel = await createArenaChannel(title, env);
               if (channel) {
                 arenaId = channel.id || null;
                 arenaSlug = channel.slug || null;
-                arenaStatus = channel.status || arenaStatus;
+                arenaStatus = channel.visibility || arenaStatus;
               }
             } catch (err) {
               arenaWarning = err.message;
@@ -1086,6 +1152,7 @@ export default {
           if (contentType.includes('multipart/form-data')) {
             const form = await request.formData();
             const customTitle = String(form.get('title') || '').trim() || null;
+            const note = String(form.get('note') || '').trim().slice(0, 2000) || null;
             const files = form.getAll('file').filter((f) => f && typeof f.arrayBuffer === 'function');
 
             if (files.length === 0) {
@@ -1104,6 +1171,7 @@ export default {
                   slug: folder.arena_channel_slug,
                   sourceUrl: fileUrl,
                   title: blockTitle,
+                  note,
                   username: user.username
                 },
                 env
@@ -1114,8 +1182,8 @@ export default {
                   `INSERT INTO blocks (
                      folder_id, arena_block_id, block_type, title, content,
                      source_url, image_url, file_name, mime_type, file_size,
-                     created_by, created_at
-                   ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
+                     created_by, created_at, note
+                   ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`
                 )
                 .bind(
                   folder.id,
@@ -1123,12 +1191,13 @@ export default {
                   blockType,
                   blockTitle,
                   fileUrl,
-                  isImage ? fileUrl : arenaBlock?.image?.display?.url || null,
+                  isImage ? fileUrl : arenaImage(arenaBlock),
                   stored.filename,
                   stored.mimeType,
                   stored.sizeBytes,
                   user.id,
-                  nowIso
+                  nowIso,
+                  note
                 )
                 .run();
 
@@ -1138,6 +1207,7 @@ export default {
             const body = await request.json().catch(() => ({}));
             const rawInput = String(body.input ?? body.content ?? body.source ?? '').trim();
             const customTitle = String(body.title || '').trim() || null;
+            const note = String(body.note || '').trim().slice(0, 2000) || null;
 
             if (!rawInput) {
               return errorResponse('Content required.');
@@ -1155,6 +1225,7 @@ export default {
                 sourceUrl: isUrl ? rawInput : null,
                 content: isUrl ? null : rawInput,
                 title: customTitle,
+                note,
                 username: user.username
               },
               env
@@ -1163,18 +1234,17 @@ export default {
             const resolvedTitle =
               customTitle ||
               arenaBlock?.title ||
-              arenaBlock?.generated_title ||
               (isUrl ? rawInput : null);
             const resolvedImage =
-              arenaBlock?.image?.display?.url ||
+              arenaImage(arenaBlock) ||
               (blockType === 'image' ? rawInput : null);
 
             await env.DB
               .prepare(
                 `INSERT INTO blocks (
                    folder_id, arena_block_id, block_type, title, content,
-                   source_url, image_url, created_by, created_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                   source_url, image_url, created_by, created_at, note
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               )
               .bind(
                 folder.id,
@@ -1185,7 +1255,8 @@ export default {
                 isUrl ? rawInput : null,
                 resolvedImage,
                 user.id,
-                nowIso
+                nowIso,
+                note
               )
               .run();
           }
@@ -1252,11 +1323,8 @@ export default {
           return errorResponse('Not authorized.', 403);
         }
 
-        if (env.ARENA_ACCESS_TOKEN && block.arena_channel_slug && block.arena_block_id) {
-          await fetch(
-            `https://api.are.na/v2/channels/${encodeURIComponent(block.arena_channel_slug)}/blocks/${block.arena_block_id}`,
-            { method: 'DELETE', headers: arenaHeaders(env) }
-          ).catch(() => {});
+        if (arenaToken(env) && block.arena_channel_slug && block.arena_block_id) {
+          await removeBlockFromArena(block.arena_channel_slug, block.arena_block_id, env).catch(() => {});
         }
 
         await env.DB.prepare(`DELETE FROM blocks WHERE id = ?`).bind(blockId).run();
