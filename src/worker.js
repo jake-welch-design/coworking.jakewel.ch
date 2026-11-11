@@ -121,7 +121,8 @@ const SCHEMA_STATEMENTS = [
 
 // Column additions for existing databases; "duplicate column" errors mean it's already applied
 const COLUMN_MIGRATIONS = [
-  `ALTER TABLE blocks ADD COLUMN note TEXT`
+  `ALTER TABLE blocks ADD COLUMN note TEXT`,
+  `ALTER TABLE users ADD COLUMN allow_emails INTEGER NOT NULL DEFAULT 0`
 ];
 
 let schemaInitialized = false;
@@ -270,7 +271,7 @@ async function getCurrentUser(request, db) {
   const nowIso = new Date().toISOString();
   const row = await db
     .prepare(
-      `SELECT u.id, u.email, u.username, u.name_color, u.name_font
+      `SELECT u.id, u.email, u.username, u.name_color, u.name_font, u.allow_emails
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`
@@ -363,13 +364,19 @@ async function fetchFolderBlocks(db, folderId) {
   return results || [];
 }
 
-async function fetchUsers(db) {
+// Emails are only shared with logged-in viewers, and only for users who opted in
+async function fetchUsers(db, viewer = null) {
   const { results } = await db
     .prepare(
-      `SELECT id, username, name_color, name_font FROM users ORDER BY username COLLATE NOCASE ASC`
+      `SELECT id, username, name_color, name_font, allow_emails, email
+       FROM users ORDER BY username COLLATE NOCASE ASC`
     )
     .all();
-  return results || [];
+  return (results || []).map(({ email, allow_emails, ...u }) => ({
+    ...u,
+    allow_emails: Boolean(allow_emails),
+    ...(viewer && allow_emails ? { email } : {})
+  }));
 }
 
 async function fetchDMs(db, userA, userB, limit = 100) {
@@ -458,7 +465,7 @@ async function computeStateToken(db) {
          (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM blocks) AS b,
          (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM events) AS e,
          (SELECT COUNT(*) FROM event_rsvps) AS r,
-         (SELECT COALESCE(MAX(id), 0) FROM users) AS u,
+         (SELECT COALESCE(MAX(id), 0) || ':' || COALESCE(SUM(allow_emails), 0) FROM users) AS u,
          (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm`
     )
     .first();
@@ -864,13 +871,13 @@ export default {
 
       // 2. Bootstrap Endpoint
       if (method === 'GET' && pathname === '/api/bootstrap') {
-        const [user, messages, folders, events, stateToken, users] = await Promise.all([
-          getCurrentUser(request, env.DB),
+        const user = await getCurrentUser(request, env.DB);
+        const [messages, folders, events, stateToken, users] = await Promise.all([
           fetchMessages(env.DB, 0, 150),
           fetchFolders(env.DB),
           fetchEvents(env.DB),
           computeStateToken(env.DB),
-          fetchUsers(env.DB)
+          fetchUsers(env.DB, user)
         ]);
         return jsonResponse({
           user,
@@ -1009,14 +1016,15 @@ export default {
         const body = await request.json().catch(() => ({}));
         const nameColor = sanitizeColor(body.name_color ?? user.name_color);
         const nameFont = sanitizeFont(body.name_font ?? user.name_font);
+        const allowEmails = typeof body.allow_emails === 'boolean' ? (body.allow_emails ? 1 : 0) : (user.allow_emails ? 1 : 0);
 
         await env.DB
-          .prepare(`UPDATE users SET name_color = ?, name_font = ? WHERE id = ?`)
-          .bind(nameColor, nameFont, user.id)
+          .prepare(`UPDATE users SET name_color = ?, name_font = ?, allow_emails = ? WHERE id = ?`)
+          .bind(nameColor, nameFont, allowEmails, user.id)
           .run();
 
         return jsonResponse({
-          user: { ...user, name_color: nameColor, name_font: nameFont }
+          user: { ...user, name_color: nameColor, name_font: nameFont, allow_emails: allowEmails }
         });
       }
 
@@ -1434,7 +1442,8 @@ export default {
 
       // 13. User Directory
       if (method === 'GET' && pathname === '/api/users') {
-        const users = await fetchUsers(env.DB);
+        const viewer = await getCurrentUser(request, env.DB);
+        const users = await fetchUsers(env.DB, viewer);
         return jsonResponse({ users });
       }
 

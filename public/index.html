@@ -55,12 +55,15 @@
         <div id="folder-detail-view" hidden>
           <h2 class="pane-title" id="active-folder-title"></h2>
           <p id="folder-nav">
-            <button type="button" id="back-to-folders-link">&larr; Resources</button>
+            <button type="button" id="back-to-folders-link">
+              &larr; Resources
+            </button>
             <button type="button" id="sync-folder-link">Sync</button>
+            <button type="button" id="toggle-add-block-btn" aria-controls="block-dropzone" aria-expanded="false">+ Add block</button>
           </p>
           <div id="active-folder-meta"></div>
 
-          <fieldset id="block-dropzone">
+          <fieldset id="block-dropzone" hidden>
             <legend>Add block</legend>
             <form id="add-block-form">
               <p>
@@ -166,7 +169,10 @@
                   maxlength="500"
                 />
               </p>
-              <p><button type="submit">Add</button></p>
+              <p>
+                <button type="submit">Add</button>
+                <button type="button" id="event-cancel-btn">Cancel</button>
+              </p>
               <p id="event-form-error" hidden></p>
             </form>
           </details>
@@ -194,9 +200,19 @@
         </div>
       </section>
 
-      <section id="directory-pane" class="pane" data-pane="directory">
-        <h2 class="pane-title">Directory</h2>
-        <ul id="directory-list"></ul>
+      <section id="timer-pane" class="pane" data-pane="timer">
+        <h2 class="pane-title">Session timer</h2>
+        <p id="timer-display" aria-live="polite">25:00</p>
+        <p id="timer-setup">
+          <label for="timer-minutes">Minutes</label>
+          <input type="number" id="timer-minutes" min="1" max="600" step="1" value="25" />
+        </p>
+        <p id="timer-controls">
+          <button type="button" id="timer-play-btn">Play</button>
+          <button type="button" id="timer-pause-btn" disabled>Pause</button>
+          <button type="button" id="timer-stop-btn" disabled>Stop</button>
+          <button type="button" id="timer-dismiss-btn" hidden>Dismiss</button>
+        </p>
       </section>
 
       <section id="lounge-pane" class="pane" data-pane="lounge">
@@ -204,7 +220,6 @@
           <h2>Lounge</h2>
           <div id="radio-bar">
             <img src="/nts.jpg" alt="" id="nts-logo" width="20" height="20" />
-            <strong>NTS</strong>
             <button
               type="button"
               class="radio-btn"
@@ -224,10 +239,13 @@
           </div>
         </div>
 
-        <div id="chat-tabs">
-          <span id="tab-group" class="chat-tab active" data-tab="group"
-            >Group</span
-          >
+        <div id="chat-tabs-row">
+          <div id="chat-tabs">
+            <span id="tab-group" class="chat-tab active" data-tab="group"
+              >Group</span
+            >
+          </div>
+          <button type="button" id="directory-toggle-btn" aria-controls="directory-drawer" aria-expanded="false">Directory</button>
         </div>
 
         <div id="chat-messages" role="log" aria-live="polite"></div>
@@ -240,10 +258,20 @@
           />
           <button type="submit" id="chat-send-btn">Send</button>
         </form>
+
+        <!-- Directory: slides out from the right over the chat -->
+        <aside id="directory-drawer" aria-hidden="true">
+          <div id="directory-drawer-header">
+            <strong>Directory</strong>
+            <button type="button" id="directory-close-btn" aria-label="Close directory">&times;</button>
+          </div>
+          <ul id="directory-list"></ul>
+        </aside>
       </section>
     </main>
 
     <script src="/app.js"></script>
     <script src="/layout.js"></script>
+    <script src="/timer.js"></script>
   </body>
 </html>

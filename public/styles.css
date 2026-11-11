@@ -152,6 +152,16 @@ select {
   text-transform: lowercase;
 }
 
+#allow-emails-label {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#allow-emails-label input {
+  vertical-align: middle;
+  margin: 0 2px 0 0;
+}
+
 #site-header {
   display: flex;
   justify-content: space-between;
@@ -168,11 +178,15 @@ select {
   color: #ffffff;
   padding: 4px 8px;
   margin: 0;
-  font-weight: bold;
+  font-style: italic;
 }
 
 #next-call-banner .banner-item {
   margin-right: 6em;
+}
+
+#next-call-banner .banner-user {
+  padding: 1px 6px;
 }
 
 #next-call-banner a {
@@ -360,10 +374,21 @@ body.is-moving * {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: #ffffff;
+  background: #f6f9fe;
   border: 1px solid #000000;
   padding: 6px 8px;
   margin-bottom: 6px;
+}
+
+/* Chat timestamps and day separators share the same small size */
+.chat-time {
+  padding-right: 8px;
+}
+
+.chat-day {
+  font-size: smaller;
+  text-align: left;
+  margin: 8px 0 4px;
 }
 
 #chat-form {
@@ -440,6 +465,147 @@ legend {
   margin: 40px auto;
   padding: 12px 14px;
   overflow: visible;
+}
+
+/* Tighter bullet indent in the Resources pane */
+#folders-list,
+#blocks-list {
+  padding-left: 18px;
+}
+
+/* --- Directory drawer (slides out from the right inside the Lounge pane) --- */
+#lounge-pane {
+  position: relative;
+  overflow: hidden;
+}
+
+#chat-tabs-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#directory-toggle-btn {
+  margin-bottom: 4px;
+}
+
+#directory-drawer {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  bottom: 0;
+  width: min(280px, 85%);
+  background: #ffffff;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18);
+  padding: 10px 14px;
+  overflow-y: auto;
+  z-index: 5;
+  transform: translateX(105%);
+  visibility: hidden;
+  transition:
+    transform 0.25s ease,
+    visibility 0s linear 0.25s;
+}
+
+#directory-drawer.open {
+  transform: translateX(0);
+  visibility: visible;
+  transition:
+    transform 0.25s ease,
+    visibility 0s;
+}
+
+#directory-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+#directory-list {
+  padding-left: 18px;
+  margin: 0;
+}
+
+/* --- Session timer --- */
+#timer-display {
+  display: inline-block;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 2.4em;
+  font-variant-numeric: tabular-nums;
+  background: #f6f9fe;
+  padding: 6px 14px;
+  margin: 4px 0 8px;
+}
+
+#timer-setup,
+#timer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+#timer-dismiss-btn {
+  margin-left: auto;
+}
+
+#timer-minutes {
+  width: 5em;
+}
+
+/* Time's up: marching "ant" borders that travel clockwise around every pane,
+   flashing bright orange / transparent. Drawn as background layers in a 3px
+   border (padding shrinks by 3px so content doesn't shift). */
+@property --ant-color {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #ff7a00;
+}
+
+body.timer-alarm .pane {
+  --ant-color: #ff7a00;
+  border: 3px solid transparent;
+  padding: 9px 11px;
+  background-image:
+    linear-gradient(#ffffff, #ffffff),
+    linear-gradient(90deg, var(--ant-color) 50%, transparent 50%),
+    linear-gradient(90deg, var(--ant-color) 50%, transparent 50%),
+    linear-gradient(0deg, var(--ant-color) 50%, transparent 50%),
+    linear-gradient(0deg, var(--ant-color) 50%, transparent 50%);
+  background-clip: padding-box, border-box, border-box, border-box, border-box;
+  background-origin: padding-box, border-box, border-box, border-box, border-box;
+  background-repeat: no-repeat, repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 100% 100%, 12px 3px, 12px 3px, 3px 12px, 3px 12px;
+  animation:
+    ants-march 0.5s linear infinite,
+    ants-flash 0.8s steps(1, end) infinite;
+}
+
+/* top → right, right ↓, bottom ←, left ↑ (one dash period per cycle) */
+@keyframes ants-march {
+  from {
+    background-position: 0 0, 0 0, 0 100%, 0 0, 100% 0;
+  }
+  to {
+    background-position: 0 0, 12px 0, -12px 100%, 0 -12px, 100% 12px;
+  }
+}
+
+@keyframes ants-flash {
+  0% {
+    --ant-color: #ff7a00;
+  }
+  50% {
+    --ant-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.timer-alarm .pane {
+    animation: none;
+  }
 }
 
 #directory-list li {

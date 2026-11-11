@@ -20,7 +20,8 @@
     activeTab: 'group',   // 'group' or a user id (number)
     dmTabs: [],           // array of { id, username, name_color, name_font }
     dmMessages: {},       // { [userId]: [...messages] }
-    dmPolling: {}         // { [userId]: intervalId }
+    dmPolling: {},        // { [userId]: intervalId }
+    pendingInvite: null   // directory user being invited via "Invite to call"
   };
 
   const el = {
@@ -45,6 +46,7 @@
     blockFileInput: document.getElementById('block-file-input'),
     blockNoteInput: document.getElementById('block-note-input'),
     activeFolderTitle: document.getElementById('active-folder-title'),
+    toggleAddBlockBtn: document.getElementById('toggle-add-block-btn'),
     addBlockSubmitBtn: document.getElementById('add-block-submit-btn'),
     blockUploadStatus: document.getElementById('block-upload-status'),
     blockFormError: document.getElementById('block-form-error'),
@@ -152,6 +154,11 @@
     return `${(b/1048576).toFixed(1)} MB`;
   }
 
+  // Chat day separator: "DD MM YYYY"
+  function fmtDay(d) {
+    return `${String(d.getDate()).padStart(2,'0')} ${String(d.getMonth()+1).padStart(2,'0')} ${d.getFullYear()}`;
+  }
+
   function fmtDT(iso) {
     return new Date(iso).toLocaleString([], { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' });
   }
@@ -163,6 +170,38 @@
       if (!isNaN(s) && s + (ev.duration_minutes||60)*60000 > now) return ev;
     }
     return null;
+  }
+
+  function openMailto(to, subject = '', body = '') {
+    const params = new URLSearchParams();
+    if (subject) params.set('subject', subject);
+    if (body) params.set('body', body);
+    const qs = params.toString().replace(/\+/g, '%20');
+    window.location.href = `mailto:${encodeURIComponent(to)}${qs ? `?${qs}` : ''}`;
+  }
+
+  // Pre-filled invite email for a call that was just scheduled
+  function emailInvite(invitee, ev) {
+    const lines = [
+      `Hi ${invitee.username},`,
+      '',
+      `You're invited to "${ev.title}".`,
+      '',
+      `When: ${fmtDT(ev.starts_at)} (${ev.duration_minutes} min)`,
+      `Where: ${ev.location}`
+    ];
+    if (ev.notes) lines.push(`Notes: ${ev.notes}`);
+    lines.push('', `Calendar: ${location.origin}`, '', `— ${state.user?.username || ''}`);
+    openMailto(invitee.email, `Invite: ${ev.title}`, lines.join('\n'));
+  }
+
+  // Directory drawer inside the Lounge pane
+  function setDirectoryOpen(open) {
+    const drawer = document.getElementById('directory-drawer');
+    const btn = document.getElementById('directory-toggle-btn');
+    drawer.classList.toggle('open', open);
+    drawer.setAttribute('aria-hidden', String(!open));
+    btn.setAttribute('aria-expanded', String(open));
   }
 
   // On mobile all panes are stacked; bring the requested one into view
@@ -284,6 +323,29 @@
       return;
     }
     el.authBar.appendChild(badge(state.user.username, state.user.name_color, state.user.name_font));
+    el.authBar.appendChild(document.createTextNode(' '));
+    // Opt in to letting other members email you from the directory
+    const allowLabel = document.createElement('label');
+    allowLabel.id = 'allow-emails-label';
+    const allowBox = document.createElement('input');
+    allowBox.type = 'checkbox';
+    allowBox.checked = Boolean(state.user.allow_emails);
+    allowBox.addEventListener('change', async () => {
+      allowBox.disabled = true;
+      try {
+        const d = await api('/api/auth/profile', { method: 'PATCH', body: { allow_emails: allowBox.checked } });
+        state.user = { ...state.user, ...d.user };
+        const ur = await api('/api/users');
+        state.users = ur.users || [];
+        renderDirectory();
+      } catch (e) {
+        allowBox.checked = !allowBox.checked;
+        alert(e.message);
+      } finally { allowBox.disabled = false; }
+    });
+    allowLabel.appendChild(allowBox);
+    allowLabel.appendChild(document.createTextNode(' allow emails'));
+    el.authBar.appendChild(allowLabel);
     el.authBar.appendChild(document.createTextNode(' · '));
     const styleLink = document.createElement('a');
     styleLink.href = '/style.html';
@@ -320,8 +382,15 @@
     item.appendChild(document.createTextNode(` — ${fmtDT(ev.starts_at)} — `));
     linkify(item, ev.location || 'FaceTime');
     if (ev.creator_username) {
-      item.appendChild(document.createTextNode(' — '));
-      item.appendChild(badge(ev.creator_username, ev.creator_color, ev.creator_font));
+      item.appendChild(document.createTextNode(' — Hosted by '));
+      // Username chip: the creator's chosen color as background; white text, or black if the color is too bright
+      const chip = badge(ev.creator_username, ev.creator_color, ev.creator_font);
+      const bg = /^#[0-9a-fA-F]{6}$/.test(ev.creator_color || '') ? ev.creator_color : '#000000';
+      chip.className = 'banner-user';
+      chip.style.background = bg;
+      chip.style.color = isLightHex(bg) ? '#000000' : '#ffffff';
+      chip.style.textShadow = 'none';
+      item.appendChild(chip);
     }
     return item;
   }
@@ -339,16 +408,18 @@
     let prevDay = '';
     for (const msg of state.messages) {
       const d = new Date(msg.created_at);
-      const day = d.toLocaleDateString([], { year:'numeric', month:'short', day:'numeric' });
+      const day = fmtDay(d);
       if (day !== prevDay) {
         prevDay = day;
         const p = document.createElement('p');
-        p.innerHTML = `<small>— ${day} —</small>`;
+        p.className = 'chat-day';
+        p.textContent = day;
         el.chatMessages.appendChild(p);
       }
       const line = document.createElement('div');
       const t = document.createElement('small');
-      t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) + ' ';
+      t.className = 'chat-time';
+      t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
       line.appendChild(t);
       line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
       line.appendChild(document.createTextNode(': '));
@@ -366,16 +437,18 @@
     let prevDay = '';
     for (const msg of msgs) {
       const d = new Date(msg.created_at);
-      const day = d.toLocaleDateString([], { year:'numeric', month:'short', day:'numeric' });
+      const day = fmtDay(d);
       if (day !== prevDay) {
         prevDay = day;
         const p = document.createElement('p');
-        p.innerHTML = `<small>— ${day} —</small>`;
+        p.className = 'chat-day';
+        p.textContent = day;
         el.chatMessages.appendChild(p);
       }
       const line = document.createElement('div');
       const t = document.createElement('small');
-      t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) + ' ';
+      t.className = 'chat-time';
+      t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
       line.appendChild(t);
       line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
       line.appendChild(document.createTextNode(': '));
@@ -402,11 +475,20 @@
       chatBtn.textContent = 'Chat';
       chatBtn.addEventListener('click', () => {
         if (!requireAuth()) return;
+        setDirectoryOpen(false);
         openDMTab(u);
       });
       li.appendChild(chatBtn);
 
       li.appendChild(document.createTextNode(' '));
+
+      if (u.email) {
+        const emailBtn = document.createElement('button');
+        emailBtn.textContent = 'Email';
+        emailBtn.addEventListener('click', () => openMailto(u.email));
+        li.appendChild(emailBtn);
+        li.appendChild(document.createTextNode(' '));
+      }
 
       const callBtn = document.createElement('button');
       callBtn.textContent = 'Invite to call';
@@ -414,8 +496,10 @@
         if (!requireAuth()) return;
         // Pre-fill a new event and open the form
         el.eventTitleInput.value = `Call with ${u.username}`;
+        state.pendingInvite = u;   // emailed the call details once it's created (if they allow emails)
         ensureEventDefaults();
         el.newEventDetails.open = true;
+        setDirectoryOpen(false);
         setMobileView('calendar');
       });
       li.appendChild(callBtn);
@@ -531,9 +615,18 @@
     for (const b of state.activeFolderBlocks) el.blocksList.appendChild(blockLI(b));
   }
 
+  // The add-block form stays hidden until "+ Add block" is pressed
+  function setAddBlockOpen(open) {
+    el.blockDropzone.hidden = !open;
+    el.toggleAddBlockBtn.textContent = open ? 'Close' : '+ Add block';
+    el.toggleAddBlockBtn.setAttribute('aria-expanded', String(open));
+    if (open) el.blockInput.focus();
+  }
+
   async function openFolder(id, sync = false) {
     state.activeFolderId = id;
     el.blockFormError.hidden = true;
+    setAddBlockOpen(false);
     renderFolder();
     try {
       const d = await api(`/api/folders/${id}${sync ? '?sync=1' : ''}`);
@@ -574,7 +667,7 @@
       if (state.activeFolderId === id && d.blocks) state.activeFolderBlocks = d.blocks;
       renderFolders();
       if (state.activeFolderId === id) renderFolder();
-    } catch (e) { el.blockFormError.textContent = e.message; el.blockFormError.hidden = false; }
+    } catch (e) { setAddBlockOpen(true); el.blockFormError.textContent = e.message; el.blockFormError.hidden = false; }
     finally { el.blockUploadStatus.hidden = true; el.addBlockSubmitBtn.disabled = false; }
   }
 
@@ -741,7 +834,13 @@
       }
     });
 
-    attachDrop(el.blockDropzone, async p => {
+    el.toggleAddBlockBtn.addEventListener('click', () => {
+      if (!requireAuth()) return;
+      setAddBlockOpen(el.blockDropzone.hidden);
+    });
+
+    // Drops work anywhere in the open folder, even with the form closed
+    attachDrop(el.folderDetailView, async p => {
       if (!state.activeFolderId) return;
       await dropInFolder(state.activeFolderId, { ...p, title: el.blockTitleInput.value.trim(), note: el.blockNoteInput.value.trim() });
       el.blockTitleInput.value = ''; el.blockNoteInput.value = '';
@@ -771,7 +870,22 @@
       el.blockInput.value = ''; el.blockTitleInput.value = ''; el.blockNoteInput.value = '';
     });
 
+    document.getElementById('directory-toggle-btn').addEventListener('click', () => {
+      setDirectoryOpen(!document.getElementById('directory-drawer').classList.contains('open'));
+    });
+    document.getElementById('directory-close-btn').addEventListener('click', () => setDirectoryOpen(false));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') setDirectoryOpen(false); });
+
+    // Cancel: clear everything typed into the new-call form and close it
+    document.getElementById('event-cancel-btn').addEventListener('click', () => {
+      el.newEventForm.reset();
+      el.eventFormError.hidden = true;
+      el.newEventDetails.open = false;
+      state.pendingInvite = null;
+    });
+
     document.getElementById('schedule-call-btn').addEventListener('click', () => {
+      state.pendingInvite = null;
       el.newEventDetails.open = !el.newEventDetails.open;
     });
     el.newEventDetails.addEventListener('toggle', () => {
@@ -788,14 +902,18 @@
       const ld = new Date(`${el.eventDateInput.value}T${el.eventTimeInput.value}`);
       if (isNaN(ld.getTime())) { el.eventFormError.textContent = 'Invalid date or time.'; el.eventFormError.hidden = false; return; }
       try {
-        const d = await api('/api/events', { method:'POST', body: {
+        const payload = {
           title: el.eventTitleInput.value.trim(),
           starts_at: ld.toISOString(),
           duration_minutes: parseInt(el.eventDurationInput.value,10)||60,
           location: el.eventLocationInput.value.trim()||'FaceTime',
           notes: el.eventNotesInput.value.trim()
-        }});
+        };
+        const d = await api('/api/events', { method:'POST', body: payload });
         state.events = d.events||[];
+        const invitee = state.pendingInvite;
+        state.pendingInvite = null;
+        if (invitee?.email) emailInvite(invitee, payload);
         el.eventTitleInput.value = ''; el.eventNotesInput.value = ''; el.newEventDetails.open = false;
         state.calYear = ld.getFullYear(); state.calMonth = ld.getMonth();
         renderCalendar(); renderBanner();
