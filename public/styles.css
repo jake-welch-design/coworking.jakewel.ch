@@ -348,9 +348,13 @@ body.is-moving * {
 }
 
 /* Tabs overlap the chat box's top border by 1px so their background covers it */
+/* Fixed height + line-height so every tab's top lines up, whatever font a user picked */
 .chat-tab {
   cursor: pointer;
-  padding: 3px 10px;
+  padding: 0 10px;
+  height: 24px;
+  line-height: 24px;
+  white-space: nowrap;
   display: inline-block;
   background: #ffffff;
   border: 1px solid #000000;
@@ -361,7 +365,11 @@ body.is-moving * {
 
 .chat-tab.active {
   font-weight: bold;
-  padding-top: 5px;
+}
+
+/* Personal (DM) tabs: slightly smaller text in the user's own font */
+.chat-tab-dm {
+  font-size: calc(1em - 2px);
 }
 
 .chat-tab-close {
@@ -611,6 +619,33 @@ body.timer-alarm .pane {
 
 #directory-list li {
   margin-bottom: 4px;
+}
+
+/* Presence bullets replace the list markers */
+#directory-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.presence-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.presence-online {
+  background: #22b24c;
+}
+
+.presence-away {
+  background: #f2c200;
+}
+
+.presence-offline {
+  background: #e0342b;
 }
 
 details > summary {

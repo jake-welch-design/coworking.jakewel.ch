@@ -278,7 +278,7 @@
     // DM tabs
     for (const t of state.dmTabs) {
       const tab = document.createElement('span');
-      tab.className = 'chat-tab' + (state.activeTab === t.id ? ' active' : '');
+      tab.className = 'chat-tab chat-tab-dm' + (state.activeTab === t.id ? ' active' : '');
       tab.dataset.tab = t.id;
 
       const bg = /^#[0-9a-fA-F]{6}$/.test(t.name_color || '') ? t.name_color : '#000000';
@@ -464,6 +464,12 @@
     if (!state.users.length) { el.directoryList.innerHTML = '<li>No users yet.</li>'; return; }
     for (const u of state.users) {
       const li = document.createElement('li');
+      const status = u.status || 'offline';
+      const dot = document.createElement('span');
+      dot.className = `presence-dot presence-${status}`;
+      dot.title = status.charAt(0).toUpperCase() + status.slice(1);
+      dot.setAttribute('aria-label', dot.title);
+      li.appendChild(dot);
       li.appendChild(badge(u.username, u.name_color, u.name_font));
       if (state.user && u.id === state.user.id) {
         li.appendChild(document.createTextNode(' (you)'));
@@ -980,12 +986,52 @@
     }));
   }
 
+  // --- Presence: heartbeat every 30s; "away" when the tab is hidden or idle for 5 min ---
+  const PRESENCE_INTERVAL_MS = 30000;
+  const IDLE_MS = 5 * 60000;
+  let lastActivity = Date.now();
+
+  function myStatus() {
+    return document.hidden || Date.now() - lastActivity > IDLE_MS ? 'away' : 'online';
+  }
+
+  // Logged in: report status and get the directory back. Logged out: just refresh the directory.
+  async function sendPresence() {
+    try {
+      const d = state.user
+        ? await api('/api/presence', { method: 'POST', body: { status: myStatus() } })
+        : await api('/api/users');
+      if (d.users) { state.users = d.users; renderDirectory(); }
+    } catch {}
+  }
+
+  function startPresence() {
+    sendPresence();
+    setInterval(sendPresence, PRESENCE_INTERVAL_MS);
+    // Coming back from idle flips straight to online (at most one extra request)
+    const bump = () => {
+      const wasIdle = Date.now() - lastActivity > IDLE_MS;
+      lastActivity = Date.now();
+      if (wasIdle) sendPresence();
+    };
+    ['pointerdown', 'keydown', 'pointermove', 'scroll', 'focus'].forEach(ev =>
+      window.addEventListener(ev, bump, { passive: true, capture: true }));
+    document.addEventListener('visibilitychange', sendPresence);
+    // Leaving the page: mark offline right away
+    window.addEventListener('pagehide', () => {
+      if (!state.user) return;
+      const blob = new Blob([JSON.stringify({ status: 'offline' })], { type: 'application/json' });
+      navigator.sendBeacon('/api/presence', blob);
+    });
+  }
+
   async function init() {
     bind();
     bindRadio();
     try { await refreshFull(true); } catch (e) { el.nextCallContent.textContent = `Error: ${e.message}`; }
     setInterval(poll, 3000);
     setInterval(renderBanner, 30000);
+    startPresence();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
   }
 

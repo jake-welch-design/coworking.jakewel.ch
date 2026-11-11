@@ -122,8 +122,14 @@ const SCHEMA_STATEMENTS = [
 // Column additions for existing databases; "duplicate column" errors mean it's already applied
 const COLUMN_MIGRATIONS = [
   `ALTER TABLE blocks ADD COLUMN note TEXT`,
-  `ALTER TABLE users ADD COLUMN allow_emails INTEGER NOT NULL DEFAULT 0`
+  `ALTER TABLE users ADD COLUMN allow_emails INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN last_seen_at TEXT`,
+  `ALTER TABLE users ADD COLUMN presence TEXT NOT NULL DEFAULT 'offline'`
 ];
+
+// A user counts as offline if no heartbeat arrived within this window
+// (clients ping every 30s; hidden tabs can be throttled to ~1/min)
+const PRESENCE_TIMEOUT_MS = 150000;
 
 let schemaInitialized = false;
 
@@ -368,15 +374,20 @@ async function fetchFolderBlocks(db, folderId) {
 async function fetchUsers(db, viewer = null) {
   const { results } = await db
     .prepare(
-      `SELECT id, username, name_color, name_font, allow_emails, email
+      `SELECT id, username, name_color, name_font, allow_emails, email, last_seen_at, presence
        FROM users ORDER BY username COLLATE NOCASE ASC`
     )
     .all();
-  return (results || []).map(({ email, allow_emails, ...u }) => ({
-    ...u,
-    allow_emails: Boolean(allow_emails),
-    ...(viewer && allow_emails ? { email } : {})
-  }));
+  const now = Date.now();
+  return (results || []).map(({ email, allow_emails, last_seen_at, presence, ...u }) => {
+    const fresh = last_seen_at && now - Date.parse(last_seen_at) < PRESENCE_TIMEOUT_MS;
+    return {
+      ...u,
+      allow_emails: Boolean(allow_emails),
+      status: fresh && presence !== 'offline' ? (presence === 'away' ? 'away' : 'online') : 'offline',
+      ...(viewer && allow_emails ? { email } : {})
+    };
+  });
 }
 
 async function fetchDMs(db, userA, userB, limit = 100) {
@@ -1001,6 +1012,10 @@ export default {
         const cookies = parseCookies(request.headers.get('Cookie'));
         if (cookies[SESSION_COOKIE]) {
           const tokenHash = await sha256Hex(cookies[SESSION_COOKIE]);
+          await env.DB
+            .prepare(`UPDATE users SET presence = 'offline' WHERE id = (SELECT user_id FROM sessions WHERE token_hash = ?)`)
+            .bind(tokenHash)
+            .run();
           await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?`).bind(tokenHash).run();
         }
         return jsonResponse({ ok: true }, 200, {
@@ -1438,6 +1453,21 @@ export default {
         await env.DB.prepare(`DELETE FROM events WHERE id = ?`).bind(eventId).run();
         const events = await fetchEvents(env.DB);
         return jsonResponse({ events, nextEvent: computeNextEvent(events) });
+      }
+
+      // 12b. Presence heartbeat: { status: 'online' | 'away' | 'offline' } → current directory
+      if (method === 'POST' && pathname === '/api/presence') {
+        const user = await getCurrentUser(request, env.DB);
+        if (user) {
+          const body = await request.json().catch(() => ({}));
+          const status = ['online', 'away', 'offline'].includes(body.status) ? body.status : 'online';
+          await env.DB
+            .prepare(`UPDATE users SET presence = ?, last_seen_at = ? WHERE id = ?`)
+            .bind(status, new Date().toISOString(), user.id)
+            .run();
+        }
+        const users = await fetchUsers(env.DB, user);
+        return jsonResponse({ users });
       }
 
       // 13. User Directory
