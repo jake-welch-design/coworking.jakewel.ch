@@ -862,6 +862,12 @@ body.timer-alarm .pane {
 .chat-line {
   position: relative;
   padding-right: 22px;
+  line-height: 1.4;
+}
+
+/* Usernames 1px smaller than the message text */
+.chat-user {
+  font-size: calc(1em - 1px);
 }
 
 .chat-line:hover {
@@ -1102,9 +1108,23 @@ summary.bevel-btn::-webkit-details-marker {
   padding: 2px 0;
 }
 
+/* Checkbox centred on the goal's first line (text has 2px top padding; box is 13px) */
 .goal input[type="checkbox"] {
-  margin: 3px 0 0;
+  margin: calc(2px + (1lh - 13px) / 2) 0 0;
   flex: none;
+}
+
+/* Blank rows: centre on the input field instead */
+.goal:has(.goal-blank) {
+  align-items: center;
+}
+
+.goal:has(.goal-blank) input[type="checkbox"] {
+  margin: 0;
+}
+
+.goal-user {
+  padding-top: 2px;
 }
 
 .goal input.goal-input {

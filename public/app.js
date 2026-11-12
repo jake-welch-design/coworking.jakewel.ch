@@ -570,7 +570,9 @@
     t.className = 'chat-time';
     t.textContent = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
     line.appendChild(t);
-    line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
+    const who = badge(msg.username, msg.name_color, msg.name_font);
+    who.classList.add('chat-user');
+    line.appendChild(who);
     line.appendChild(document.createTextNode(': '));
     linkify(line, msg.body);
     if (msg.attachment_id) line.appendChild(attachmentEl(msg));
