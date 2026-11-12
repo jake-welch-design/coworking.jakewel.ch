@@ -581,6 +581,13 @@ legend {
   grid-column: 2;
 }
 
+/* "Started by …" under the controls */
+#timer-by {
+  font-size: smaller;
+  color: #555555;
+  margin: 8px 0 0;
+}
+
 #timer-dismiss-btn {
   grid-column: 3;
   justify-self: end;

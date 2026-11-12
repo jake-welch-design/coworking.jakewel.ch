@@ -55,18 +55,16 @@
         <div id="folder-detail-view" hidden>
           <h2 class="pane-title" id="active-folder-title"></h2>
           <p id="folder-nav">
-            <button type="button" id="back-to-folders-link">
-              &larr; Resources
-            </button>
-            <button type="button" id="sync-folder-link">Sync</button>
+            <button type="button" id="back-to-folders-link" title="Back to resources" aria-label="Back to resources">&larr;</button>
+            <button type="button" id="sync-folder-link" title="Sync with Are.na">Sync</button>
             <button
               type="button"
               id="toggle-add-block-btn"
+              title="Add block"
+              aria-label="Add block"
               aria-controls="block-dropzone"
               aria-expanded="false"
-            >
-              + Add block
-            </button>
+            >+</button>
           </p>
           <div id="active-folder-meta"></div>
 
@@ -215,6 +213,7 @@
           </span>
           <button type="button" id="timer-dismiss-btn" hidden>Dismiss</button>
         </div>
+        <p id="timer-by" hidden></p>
       </section>
 
       <section id="lounge-pane" class="pane" data-pane="lounge">

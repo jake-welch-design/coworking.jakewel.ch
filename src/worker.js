@@ -105,6 +105,15 @@ const SCHEMA_STATEMENTS = [
     created_at TEXT NOT NULL,
     PRIMARY KEY (event_id, user_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS shared_timer (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status TEXT NOT NULL DEFAULT 'idle',
+    ends_at INTEGER,
+    remaining_ms INTEGER NOT NULL DEFAULT 0,
+    minutes INTEGER NOT NULL DEFAULT 25,
+    updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_at TEXT NOT NULL DEFAULT ''
+  )`,
   `CREATE TABLE IF NOT EXISTS app_counters (
     name TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
@@ -482,11 +491,74 @@ async function computeStateToken(db) {
          (SELECT COUNT(*) FROM event_rsvps) AS r,
          (SELECT COALESCE(MAX(id), 0) || ':' || COALESCE(SUM(allow_emails), 0) FROM users) AS u,
          (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm,
-         (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'messages_deleted') AS md`
+         (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'messages_deleted') AS md,
+         (SELECT COALESCE(MAX(updated_at), '') FROM shared_timer) AS t`
     )
     .first();
   if (!row) return '0';
-  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}`;
+  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.t}`;
+}
+
+// --- Shared session timer (one row for the whole room) ---
+
+// Returns remaining time as of now, so clients don't depend on matching clocks.
+// A running timer whose end has passed reads as 'done' until someone dismisses it.
+async function fetchTimer(db) {
+  const row = await db
+    .prepare(
+      `SELECT t.status, t.ends_at, t.remaining_ms, t.minutes, t.updated_at, u.username AS updated_by_username
+       FROM shared_timer t
+       LEFT JOIN users u ON u.id = t.updated_by
+       WHERE t.id = 1`
+    )
+    .first();
+  if (!row) return { status: 'idle', remaining_ms: 0, minutes: 25, updated_by_username: null, updated_at: '' };
+  let { status } = row;
+  let remaining = status === 'paused' ? row.remaining_ms : 0;
+  if (status === 'running') {
+    remaining = Math.max(0, (row.ends_at || 0) - Date.now());
+    if (remaining === 0) status = 'done';
+  }
+  return {
+    status,
+    remaining_ms: remaining,
+    minutes: row.minutes,
+    updated_by_username: row.updated_by_username || null,
+    updated_at: row.updated_at
+  };
+}
+
+async function updateTimer(db, action, minutesInput, userId) {
+  const current = await fetchTimer(db);
+  const now = Date.now();
+  let status = 'idle', endsAt = null, remaining = 0;
+  let minutes = Math.min(600, Math.max(1, parseInt(minutesInput, 10) || current.minutes || 25));
+
+  if (action === 'play') {
+    const ms = current.status === 'paused' && current.remaining_ms > 0 ? current.remaining_ms : minutes * 60000;
+    if (current.status === 'paused') minutes = current.minutes;
+    status = 'running';
+    endsAt = now + ms;
+  } else if (action === 'pause') {
+    if (current.status !== 'running') return current;
+    status = 'paused';
+    remaining = current.remaining_ms;
+    minutes = current.minutes;
+  } else if (action !== 'stop' && action !== 'dismiss') {
+    throw new Error('Unknown timer action.');
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO shared_timer (id, status, ends_at, remaining_ms, minutes, updated_by, updated_at)
+       VALUES (1, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         status = excluded.status, ends_at = excluded.ends_at, remaining_ms = excluded.remaining_ms,
+         minutes = excluded.minutes, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
+    )
+    .bind(status, endsAt, remaining, minutes, userId, new Date(now).toISOString())
+    .run();
+  return fetchTimer(db);
 }
 
 // --- Are.na API Helpers ---
@@ -888,12 +960,13 @@ export default {
       // 2. Bootstrap Endpoint
       if (method === 'GET' && pathname === '/api/bootstrap') {
         const user = await getCurrentUser(request, env.DB);
-        const [messages, folders, events, stateToken, users] = await Promise.all([
+        const [messages, folders, events, stateToken, users, timer] = await Promise.all([
           fetchMessages(env.DB, 0, 150),
           fetchFolders(env.DB),
           fetchEvents(env.DB),
           computeStateToken(env.DB),
-          fetchUsers(env.DB, user)
+          fetchUsers(env.DB, user),
+          fetchTimer(env.DB)
         ]);
         return jsonResponse({
           user,
@@ -907,6 +980,7 @@ export default {
           folders,
           events,
           nextEvent: computeNextEvent(events),
+          timer,
           stateToken
         });
       }
@@ -1491,6 +1565,24 @@ export default {
         await env.DB.prepare(`DELETE FROM events WHERE id = ?`).bind(eventId).run();
         const events = await fetchEvents(env.DB);
         return jsonResponse({ events, nextEvent: computeNextEvent(events) });
+      }
+
+      // 12a. Shared session timer: GET state; POST { action: play|pause|stop|dismiss, minutes }
+      if (pathname === '/api/timer') {
+        if (method === 'GET') {
+          return jsonResponse({ timer: await fetchTimer(env.DB) });
+        }
+        if (method === 'POST') {
+          const user = await getCurrentUser(request, env.DB);
+          if (!user) return errorResponse('Authentication required.', 401);
+          const body = await request.json().catch(() => ({}));
+          try {
+            const timer = await updateTimer(env.DB, String(body.action || ''), body.minutes, user.id);
+            return jsonResponse({ timer });
+          } catch (err) {
+            return errorResponse(err.message);
+          }
+        }
       }
 
       // 12b. Presence heartbeat: { status: 'online' | 'away' | 'offline' } → current directory

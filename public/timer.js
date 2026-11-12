@@ -1,11 +1,11 @@
-// Session timer — Play / Pause / Stop with a minutes input.
-// When time runs out, every pane gets a flashing dotted border until Dismiss is pressed.
-// Per-browser only; survives reloads via localStorage.
+// Shared session timer — one timer for the whole room, stored on the server.
+// Play / Pause / Stop / Dismiss post to /api/timer; app.js passes server state in via
+// CoworkingTimer.set() on load and whenever the poll's state token changes.
+// When time runs out, every pane gets the marching-ants border until someone dismisses it.
 
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'coworking.timer.v1';
   const $ = (id) => document.getElementById(id);
   const display = $('timer-display');
   const minutesInput = $('timer-minutes');
@@ -13,28 +13,17 @@
   const pauseBtn = $('timer-pause-btn');
   const stopBtn = $('timer-stop-btn');
   const dismissBtn = $('timer-dismiss-btn');
+  const byLine = $('timer-by');
   if (!display) return;
 
+  // Local view of the shared timer. endAt is in this browser's clock (derived from remaining_ms).
   // status: 'idle' | 'running' | 'paused' | 'done'
-  let t = load();
+  let t = { status: 'idle', endAt: 0, remainingMs: 0, minutes: 25, by: null };
   let tick = null;
+  let busy = false;
 
-  function load() {
-    try {
-      const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      if (s && ['idle', 'running', 'paused', 'done'].includes(s.status)) return s;
-    } catch {}
-    return { status: 'idle', endAt: 0, remainingMs: 0, minutes: 25 };
-  }
-
-  function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(t)); } catch {}
-  }
-
-  // Clamped duration from the input; only rewrites the field when asked (not while typing)
-  function durationMs(normalize = false) {
+  function inputMs() {
     const m = Math.min(600, Math.max(1, Math.round(Number(minutesInput.value) || 25)));
-    if (normalize) minutesInput.value = String(m);
     return m * 60000;
   }
 
@@ -49,55 +38,71 @@
     if (t.status === 'running') return t.endAt - Date.now();
     if (t.status === 'paused') return t.remainingMs;
     if (t.status === 'done') return 0;
-    return durationMs();
+    return inputMs();
   }
 
   function render() {
-    if (t.status === 'running' && remaining() <= 0) finish();
+    // Reaching zero flips to done locally; the server reports the same once anyone reloads
+    if (t.status === 'running' && remaining() <= 0) t = { ...t, status: 'done' };
     display.textContent = fmt(remaining());
-    playBtn.disabled = t.status === 'running';
-    pauseBtn.disabled = t.status !== 'running';
-    stopBtn.disabled = t.status === 'idle';
+    playBtn.disabled = busy || t.status === 'running';
+    pauseBtn.disabled = busy || t.status !== 'running';
+    stopBtn.disabled = busy || t.status === 'idle';
     minutesInput.disabled = t.status === 'running' || t.status === 'paused';
     dismissBtn.hidden = t.status !== 'done';
+    dismissBtn.disabled = busy;
     document.body.classList.toggle('timer-alarm', t.status === 'done');
+
+    const verb = { running: 'Started', paused: 'Paused', done: 'Started' }[t.status];
+    byLine.hidden = !(verb && t.by);
+    if (verb && t.by) byLine.textContent = `${verb} by ${t.by}`;
+
+    if (t.status === 'running') { if (!tick) tick = setInterval(render, 250); }
+    else { clearInterval(tick); tick = null; }
   }
 
-  function startTicking() {
-    if (!tick) tick = setInterval(render, 250);
+  // Server state → local view
+  function set(timer) {
+    if (!timer) return;
+    t = {
+      status: timer.status,
+      endAt: timer.status === 'running' ? Date.now() + (timer.remaining_ms || 0) : 0,
+      remainingMs: timer.remaining_ms || 0,
+      minutes: timer.minutes || 25,
+      by: timer.updated_by_username || null
+    };
+    // Show the shared duration, unless someone is typing a new one
+    if (document.activeElement !== minutesInput) minutesInput.value = String(t.minutes);
+    render();
   }
 
-  function stopTicking() {
-    clearInterval(tick); tick = null;
+  async function send(action) {
+    busy = true; render();
+    try {
+      const res = await fetch('/api/timer', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, minutes: Math.round(inputMs() / 60000) })
+      });
+      if (res.status === 401) { window.location.href = '/login.html'; return; }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      busy = false;
+      set(data.timer);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      busy = false; render();
+    }
   }
 
-  function finish() {
-    t = { ...t, status: 'done', endAt: 0, remainingMs: 0 };
-    stopTicking(); save();
-  }
+  playBtn.addEventListener('click', () => send('play'));
+  pauseBtn.addEventListener('click', () => send('pause'));
+  stopBtn.addEventListener('click', () => send('stop'));
+  dismissBtn.addEventListener('click', () => send('dismiss'));
+  minutesInput.addEventListener('input', () => { if (t.status === 'idle') display.textContent = fmt(inputMs()); });
 
-  function reset() {
-    t = { status: 'idle', endAt: 0, remainingMs: 0, minutes: Number(minutesInput.value) || 25 };
-    stopTicking(); save(); render();
-  }
-
-  playBtn.addEventListener('click', () => {
-    const ms = t.status === 'paused' ? t.remainingMs : durationMs(true);
-    t = { status: 'running', endAt: Date.now() + ms, remainingMs: 0, minutes: Number(minutesInput.value) };
-    save(); startTicking(); render();
-  });
-
-  pauseBtn.addEventListener('click', () => {
-    if (t.status !== 'running') return;
-    t = { ...t, status: 'paused', remainingMs: Math.max(0, t.endAt - Date.now()), endAt: 0 };
-    stopTicking(); save(); render();
-  });
-
-  stopBtn.addEventListener('click', reset);
-  dismissBtn.addEventListener('click', reset);
-  minutesInput.addEventListener('input', () => { if (t.status === 'idle') display.textContent = fmt(durationMs()); });
-
-  if (t.minutes) minutesInput.value = String(t.minutes);
-  if (t.status === 'running') startTicking();
+  window.CoworkingTimer = { set };
   render();
 })();

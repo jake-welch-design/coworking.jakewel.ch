@@ -663,7 +663,9 @@
   // The add-block form stays hidden until "+ Add block" is pressed
   function setAddBlockOpen(open) {
     el.blockDropzone.hidden = !open;
-    el.toggleAddBlockBtn.textContent = open ? 'Close' : '+ Add block';
+    el.toggleAddBlockBtn.textContent = open ? '×' : '+';
+    el.toggleAddBlockBtn.title = open ? 'Close' : 'Add block';
+    el.toggleAddBlockBtn.setAttribute('aria-label', el.toggleAddBlockBtn.title);
     el.toggleAddBlockBtn.setAttribute('aria-expanded', String(open));
     if (open) el.blockInput.focus();
   }
@@ -1034,6 +1036,7 @@
     state.events = d.events||[];
     state.users = d.users||[];
     state.stateToken = d.stateToken||'';
+    if (d.timer) window.CoworkingTimer?.set(d.timer);
     renderAll(initial);
     if (state.activeFolderId) {
       const fd = await api(`/api/folders/${state.activeFolderId}`).catch(() => null);
@@ -1053,8 +1056,9 @@
       }
       if (d.stateToken && d.stateToken !== state.stateToken) {
         state.stateToken = d.stateToken;
-        const [fr, er, ur, mr] = await Promise.all([api('/api/folders'), api('/api/events'), api('/api/users'), api('/api/messages')]);
+        const [fr, er, ur, mr, tr] = await Promise.all([api('/api/folders'), api('/api/events'), api('/api/users'), api('/api/messages'), api('/api/timer')]);
         state.folders = fr.folders||[]; state.events = er.events||[]; state.users = ur.users||[];
+        if (tr.timer) window.CoworkingTimer?.set(tr.timer);
         // Full reload catches messages deleted by others
         if (mr.messages) { state.messages = mr.messages; if (state.activeTab === 'group') renderChat(false); }
         renderFolders(); renderCalendar(); renderBanner(); renderDirectory();
