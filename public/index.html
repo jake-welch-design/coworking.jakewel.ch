@@ -125,14 +125,15 @@
             <button type="button" id="cal-next-link" aria-label="Next month">
               &rarr;
             </button>
+          </p>
+          <p id="cal-today-row">
             <button type="button" id="cal-today-link">Today</button>
-            <button
-              type="button"
-              id="schedule-call-btn"
-              aria-controls="new-event-details"
-            >
-              Schedule call
-            </button>
+          </p>
+
+          <pre id="calendar-ascii" aria-label="Calendar"></pre>
+
+          <p id="schedule-call-row">
+            <button type="button" id="schedule-call-btn" aria-controls="new-event-details">Schedule call</button>
           </p>
 
           <details id="new-event-details">
@@ -184,21 +185,6 @@
             </form>
           </details>
 
-          <table cellpadding="4" cellspacing="0" id="calendar-table">
-            <thead>
-              <tr>
-                <th>Su</th>
-                <th>Mo</th>
-                <th>Tu</th>
-                <th>We</th>
-                <th>Th</th>
-                <th>Fr</th>
-                <th>Sa</th>
-              </tr>
-            </thead>
-            <tbody id="calendar-grid-body"></tbody>
-          </table>
-
           <p>
             <strong id="events-list-heading">Upcoming</strong>
             <a href="#" id="clear-date-filter-link" hidden>(Show all)</a>
@@ -221,12 +207,14 @@
             value="25"
           />
         </p>
-        <p id="timer-controls">
-          <button type="button" id="timer-play-btn">Play</button>
-          <button type="button" id="timer-pause-btn" disabled>Pause</button>
-          <button type="button" id="timer-stop-btn" disabled>Stop</button>
+        <div id="timer-controls">
+          <span id="timer-buttons">
+            <button type="button" id="timer-play-btn">Play</button>
+            <button type="button" id="timer-pause-btn" disabled>Pause</button>
+            <button type="button" id="timer-stop-btn" disabled>Stop</button>
+          </span>
           <button type="button" id="timer-dismiss-btn" hidden>Dismiss</button>
-        </p>
+        </div>
       </section>
 
       <section id="lounge-pane" class="pane" data-pane="lounge">

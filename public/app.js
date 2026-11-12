@@ -71,7 +71,7 @@
     calNextLink: document.getElementById('cal-next-link'),
     calTodayLink: document.getElementById('cal-today-link'),
     calMonthLabel: document.getElementById('cal-month-label'),
-    calGridBody: document.getElementById('calendar-grid-body'),
+    calAscii: document.getElementById('calendar-ascii'),
     eventsListHeading: document.getElementById('events-list-heading'),
     clearDateFilterLink: document.getElementById('clear-date-filter-link'),
     eventsList: document.getElementById('events-list')
@@ -724,6 +724,91 @@
     }
   }
 
+  // Box-drawing month grid (6 weeks x 7 days, 22 characters wide). Today gets a double-line box.
+  function renderAsciiGrid(startDow, dim, evByDate, today) {
+    const W = 22;
+    const monthName = new Date(state.calYear, state.calMonth, 1).toLocaleDateString([], { month: 'long' });
+    const yearStr = String(state.calYear);
+    const fill = Math.max(1, W - 2 - monthName.length - yearStr.length - 4);
+    const title = ` ${monthName} ${'░'.repeat(fill)} ${yearStr} `;
+
+    // Border line between week rows: ╟──┼──┼…──╢ (index 0, then "──" + junction per column)
+    const boundary = (l, j, r, seg = '─') => {
+      const chars = [l];
+      for (let c = 0; c < 7; c++) chars.push(seg, seg, c < 6 ? j : r);
+      return chars;
+    };
+    const lines = [];        // each line: array of chars (borders) or day objects
+    lines.push(['╔', ...'═'.repeat(W - 2), '╗']);
+    lines.push(['║', ...[...title].slice(0, W - 2), '║']);
+    lines.push(boundary('╟', '┬', '╢'));
+    const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    lines.push(['║', ...dows.flatMap((d, i) => [d, i < 6 ? '│' : '║'])]);
+    const weekLines = [];    // index of the boundary line above each week
+    let dc = 1;
+    for (let r = 0; r < 6; r++) {
+      weekLines.push(lines.length);
+      lines.push(boundary('╟', '┼', '╢'));
+      const row = ['║'];
+      for (let c = 0; c < 7; c++) {
+        const i = r * 7 + c;
+        if (i < startDow || dc > dim) row.push('░░');
+        else {
+          const dk = dateKey(new Date(state.calYear, state.calMonth, dc));
+          row.push({ day: dc, key: dk, events: evByDate.get(dk) || 0 });
+          dc++;
+        }
+        row.push(c < 6 ? '│' : '║');
+      }
+      lines.push(row);
+    }
+    lines.push(boundary('╚', '╧', '╝', '═'));
+
+    // Double-line box around today
+    for (let r = 0; r < 6; r++) {
+      const row = lines[weekLines[r] + 1];
+      const c = row.findIndex(x => typeof x === 'object' && x.key === today);
+      if (c === -1) continue;
+      const col = (c - 1) / 2;             // row layout: ║ cell │ cell │ … ║
+      const above = lines[weekLines[r]], below = lines[weekLines[r] + 2];
+      const L = col * 3, R = col * 3 + 3;  // junction indexes on boundary lines
+      above[L] = '╔'; above[L + 1] = '═'; above[L + 2] = '═'; above[R] = '╗';
+      below[L] = '╚'; below[L + 1] = '═'; below[L + 2] = '═'; below[R] = '╝';
+      row[c - 1] = '║'; row[c + 1] = '║';
+    }
+
+    el.calAscii.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    lines.forEach((line, li) => {
+      let text = '';
+      const flush = () => { if (text) { frag.appendChild(document.createTextNode(text)); text = ''; } };
+      for (const part of line) {
+        if (typeof part === 'string') { text += part; continue; }
+        flush();
+        const span = document.createElement('span');
+        span.className = 'cal-day' +
+          (part.key === today ? ' is-today' : '') +
+          (part.events ? ' has-events' : '') +
+          (part.key === state.selectedDateKey ? ' is-selected' : '');
+        span.textContent = String(part.day).padStart(2, '0');
+        span.tabIndex = 0;
+        span.setAttribute('role', 'button');
+        span.setAttribute('aria-label', `${part.key}${part.events ? `, ${part.events} call${part.events > 1 ? 's' : ''}` : ''}`);
+        const pick = () => {
+          state.selectedDateKey = state.selectedDateKey === part.key ? null : part.key;
+          if (state.selectedDateKey) el.eventDateInput.value = state.selectedDateKey;
+          renderCalendar();
+        };
+        span.addEventListener('click', pick);
+        span.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+        frag.appendChild(span);
+      }
+      text += li < lines.length - 1 ? '\n' : '';
+      flush();
+    });
+    el.calAscii.appendChild(frag);
+  }
+
   function renderCalendar() {
     const first = new Date(state.calYear, state.calMonth, 1);
     el.calMonthLabel.textContent = first.toLocaleDateString([], { month:'long', year:'numeric' });
@@ -731,33 +816,7 @@
     for (const ev of state.events) { const k = dateKey(new Date(ev.starts_at)); evByDate.set(k, (evByDate.get(k)||0)+1); }
     const startDow = first.getDay(), dim = new Date(state.calYear, state.calMonth+1, 0).getDate();
     const today = dateKey(new Date());
-    el.calGridBody.innerHTML = '';
-    let dc = 1;
-    const total = Math.ceil((startDow + dim) / 7) * 7;
-    for (let i = 0; i < total; i++) {
-      if (i % 7 === 0) el.calGridBody.appendChild(document.createElement('tr'));
-      const tr = el.calGridBody.lastElementChild, td = document.createElement('td');
-      if (i < startDow || dc > dim) { const blank = document.createElement('span'); blank.textContent = '\u00a0'; td.appendChild(blank); }
-      else {
-        const dk = dateKey(new Date(state.calYear, state.calMonth, dc));
-        const cnt = evByDate.get(dk)||0;
-        const label = `${dc}${cnt ? '*' : ''}`;
-        const link = actionLink(label, () => {
-          state.selectedDateKey = state.selectedDateKey === dk ? null : dk;
-          if (state.selectedDateKey) el.eventDateInput.value = state.selectedDateKey;
-          renderCalendar();
-        });
-        if (dk === state.selectedDateKey) {
-          const b = document.createElement('strong');
-          b.appendChild(document.createTextNode('[')); b.appendChild(link); b.appendChild(document.createTextNode(']'));
-          td.appendChild(b);
-        } else if (dk === today) {
-          const b = document.createElement('strong'); b.appendChild(link); td.appendChild(b);
-        } else td.appendChild(link);
-        dc++;
-      }
-      tr.appendChild(td);
-    }
+    renderAsciiGrid(startDow, dim, evByDate, today);
     // Events list
     el.eventsList.innerHTML = '';
     const now = Date.now();

@@ -391,10 +391,12 @@ body.is-moving * {
 /* Chat timestamps and day separators share the same small size */
 .chat-time {
   padding-right: 8px;
+  font-weight: bold;
 }
 
 .chat-day {
   font-size: smaller;
+  font-weight: bold;
   text-align: left;
   margin: 0;
   padding: 16px 0 8px;
@@ -538,8 +540,14 @@ legend {
 }
 
 /* --- Session timer --- */
+/* Timer pane content is centered */
+#timer-pane {
+  text-align: center;
+}
+
 #timer-display {
   display: inline-block;
+  border: 1px solid #000000;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 2.4em;
   font-variant-numeric: tabular-nums;
@@ -549,15 +557,33 @@ legend {
 }
 
 #timer-setup,
-#timer-controls {
+#timer-buttons {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
+#timer-setup {
+  margin: 0 0 8px;
+}
+
+/* Play/Pause/Stop centered; Dismiss sits on the same row at the right edge */
+#timer-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+#timer-buttons {
+  grid-column: 2;
+}
+
 #timer-dismiss-btn {
-  margin-left: auto;
+  grid-column: 3;
+  justify-self: end;
 }
 
 #timer-minutes {
@@ -736,49 +762,72 @@ summary.bevel-btn::-webkit-details-marker {
   display: none;
 }
 
+/* ASCII calendar: box-drawing grid in a <pre>. 14px, but shrinks if the
+   (narrow) column can't fit its 22 characters */
+#calendar-pane > div {
+  container-type: inline-size;
+}
+
+#calendar-ascii {
+  font-family: ui-monospace, Menlo, "DejaVu Sans Mono", Consolas, monospace;
+  font-size: min(14px, calc(100cqi / 13.4));
+  line-height: 1.15;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px auto;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.cal-day {
+  cursor: pointer;
+}
+
+.cal-day:hover,
+.cal-day:focus-visible {
+  background: #000000;
+  color: #ffffff;
+  outline: none;
+}
+
+/* Days with calls */
+.cal-day.has-events {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.cal-day.is-today {
+  font-weight: bold;
+}
+
+/* Clicked day (filters the call list) */
+.cal-day.is-selected {
+  background: #e49063;
+  color: #ffffff;
+}
+
 #cal-nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  margin-bottom: 6px;
 }
 
-#schedule-call-btn {
-  margin-left: auto;
+#cal-today-row {
+  text-align: center;
+  margin: 0 0 4px;
+}
+
+#schedule-call-row {
+  margin: 0 0 8px;
+  text-align: center;
 }
 
 #cal-month-label {
-  min-width: 8em;
+  min-width: 0;
   text-align: center;
-}
-
-/* Calendar table */
-#calendar-table {
-  border-collapse: collapse;
-  border: 2px solid #808080;
-  table-layout: fixed;
-  width: calc(100% + 16px);
-  margin: 0 -8px;
-}
-
-#calendar-table th {
-  background: black;
-  color: #ffffff;
-  padding: 2px 6px;
-  font-weight: normal;
-}
-
-#calendar-table td {
-  padding: 0;
-  text-align: center;
-}
-
-/* Square day cells */
-#calendar-table td > * {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 1 / 1;
 }
 
 @media (max-width: 768px) {

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "coworking.layout.v5";
+  const STORAGE_KEY = "coworking.layout.v7";
   const GUTTER_PX = 20;
   const MIN_W = 160; // min column width
   const MIN_H = 120; // min pane height
@@ -16,13 +16,13 @@
     columns: [
       { w: 15, panes: [{ id: "resources", h: 1 }] },
       {
-        w: 25,
+        w: 15,
         panes: [
-          { id: "calendar", h: 3 },
           { id: "timer", h: 1 },
+          { id: "calendar", h: 3 },
         ],
       },
-      { w: 60, panes: [{ id: "lounge", h: 1 }] },
+      { w: 70, panes: [{ id: "lounge", h: 1 }] },
     ],
   });
 
