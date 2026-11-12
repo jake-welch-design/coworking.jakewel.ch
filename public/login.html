@@ -27,12 +27,33 @@
         </label>
       </p>
       <p id="login-error" hidden></p>
-      <p><button type="submit">Log in</button></p>
+      <p>
+        <button type="submit">Log in</button>
+        <button type="button" id="forgot-btn">Forgot password?</button>
+      </p>
     </form>
+
+    <!-- Password reset: links are made by the site admin -->
+    <div id="forgot-panel" hidden>
+      <p>To reset your password, ask the site admin for a reset link. It lets you choose a new password and works once.</p>
+      <p><button type="button" id="forgot-cancel">Back to log in</button></p>
+    </div>
+
     <p><a href="/signup.html">Don't have an account?</a></p>
   </div>
 
   <script>
+    const loginForm = document.getElementById('login-form');
+    const forgotPanel = document.getElementById('forgot-panel');
+    const showForgot = (show) => {
+      loginForm.hidden = show;
+      forgotPanel.hidden = !show;
+      document.querySelector('.pane-title').textContent = show ? 'Reset password' : 'Log in';
+    };
+    document.getElementById('forgot-btn').addEventListener('click', () => showForgot(true));
+    document.getElementById('forgot-cancel').addEventListener('click', () => showForgot(false));
+    if (new URLSearchParams(location.search).get('forgot') === '1') showForgot(true);
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errEl = document.getElementById('login-error');

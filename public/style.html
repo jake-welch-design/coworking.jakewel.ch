@@ -13,8 +13,8 @@
   </header>
   <hr />
 
-  <div class="page-form">
-    <h2>Name style</h2>
+  <div class="pane page-form">
+    <h2 class="pane-title">Name style</h2>
     <form id="style-form">
       <p>
         <label>Color: <input type="color" id="style-color" value="#000000" /></label>
@@ -41,7 +41,7 @@
       <p id="style-error" hidden></p>
       <p>
         <button type="submit">Save</button>
-        <a href="/">Cancel</a>
+        <button type="button" onclick="window.location.href = '/'">Cancel</button>
       </p>
     </form>
   </div>

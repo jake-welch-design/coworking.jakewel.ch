@@ -1244,3 +1244,33 @@ input[type="checkbox"]:disabled {
   gap: 4px;
   margin: 6px 0 0;
 }
+
+/* Calendar call list: one call per block, stacked lines */
+#events-list > li.event-item {
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.event-notes {
+  color: #555555;
+}
+
+/* Bullets sit inside the list so there's no left indent */
+ul.event-attendees {
+  margin: 0;
+  padding-left: 0;
+  list-style-position: inside;
+}
+
+/* Everything except the title is 2px smaller */
+.event-item > :not(.event-title) {
+  font-size: calc(1em - 2px);
+}
+
+.event-host {
+  font-style: italic;
+}
+
+.event-actions {
+  margin-top: 2px;
+}

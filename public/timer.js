@@ -41,6 +41,20 @@
     return inputMs();
   }
 
+  // Alarm sound: plays once when the timer reaches zero (not on page load if it already had)
+  const alarm = new Audio('/sounds/timer-done.mp3');
+  alarm.preload = 'auto';
+  let lastStatus = null;
+  function updateSound() {
+    if (t.status === 'done' && lastStatus !== null && lastStatus !== 'done') {
+      alarm.currentTime = 0;
+      alarm.play().catch(() => {}); // browsers may block sound until the page has been clicked once
+    } else if (t.status !== 'done' && !alarm.paused) {
+      alarm.pause(); // dismissed or restarted
+    }
+    lastStatus = t.status;
+  }
+
   function render() {
     // Reaching zero flips to done locally; the server reports the same once anyone reloads
     if (t.status === 'running' && remaining() <= 0) t = { ...t, status: 'done' };
@@ -52,6 +66,7 @@
     dismissBtn.hidden = t.status !== 'done';
     dismissBtn.disabled = busy;
     document.body.classList.toggle('timer-alarm', t.status === 'done');
+    updateSound();
 
     const verb = { running: 'Started', paused: 'Paused', done: 'Started' }[t.status];
     byLine.hidden = !(verb && t.by);

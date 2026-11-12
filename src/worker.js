@@ -124,6 +124,13 @@ const SCHEMA_STATEMENTS = [
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used_at TEXT,
+    created_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS app_counters (
     name TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
@@ -541,12 +548,13 @@ async function computeStateToken(db) {
          (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm,
          (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'messages_deleted') AS md,
          (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'resources_edited') AS be,
+         (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'events_edited') AS ee,
          (SELECT COALESCE(MAX(updated_at), '') FROM shared_timer) AS t,
          (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM goals) AS g`
     )
     .first();
   if (!row) return '0';
-  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.be}|${row.t}|${row.g}`;
+  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.be}|${row.ee}|${row.t}|${row.g}`;
 }
 
 // --- Shared goals checklist ---
@@ -1176,6 +1184,36 @@ export default {
           pollUser ? fetchIncomingDMs(env.DB, pollUser.id, afterDm) : { dms: [], dmMaxId: 0 }
         ]);
         return jsonResponse({ messages, stateToken, ...incoming });
+      }
+
+      // 4a. Password reset: set a new password with a one-time token.
+      // Tokens are created by an admin with scripts/reset-link.mjs, which prints a link to send the user.
+      if (method === 'POST' && pathname === '/api/auth/reset') {
+        const body = await request.json().catch(() => ({}));
+        const token = String(body.token || '').trim();
+        const password = String(body.password || '');
+        if (!/^[0-9a-f]{64}$/.test(token)) return errorResponse('This reset link is invalid.');
+        if (password.length < 6) return errorResponse('Password must be at least 6 characters.');
+
+        const tokenHash = await sha256Hex(token);
+        const reset = await env.DB
+          .prepare(`SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?`)
+          .bind(tokenHash)
+          .first();
+        if (!reset || reset.used_at || reset.expires_at < Date.now()) {
+          return errorResponse('This reset link has expired or was already used. Ask the site admin for a new one.', 400);
+        }
+
+        await env.DB
+          .prepare(`UPDATE users SET password_hash = ? WHERE id = ?`)
+          .bind(await hashPassword(password), reset.user_id)
+          .run();
+        // Use up every outstanding link and sign out all existing sessions
+        await env.DB.prepare(`DELETE FROM password_resets WHERE user_id = ?`).bind(reset.user_id).run();
+        await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(reset.user_id).run();
+
+        const cookie = await createSession(reset.user_id, env.DB, isSecure);
+        return jsonResponse({ ok: true }, 200, { 'Set-Cookie': cookie });
       }
 
       // 4. Auth: Sign Up
@@ -1890,6 +1928,39 @@ export default {
       }
 
       const eventDeleteMatch = pathname.match(/^\/api\/events\/(\d+)$/);
+      // Edit a call (creator only); same fields and checks as creating one
+      if (eventDeleteMatch && method === 'PATCH') {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const eventId = parseInt(eventDeleteMatch[1], 10);
+        const ev = await env.DB.prepare(`SELECT id, created_by FROM events WHERE id = ?`).bind(eventId).first();
+        if (!ev) return errorResponse('Event not found.', 404);
+        if (ev.created_by !== user.id) return errorResponse('Only the host can edit this call.', 403);
+
+        const body = await request.json().catch(() => ({}));
+        const title = String(body.title || '').trim();
+        const duration = Math.min(720, Math.max(10, parseInt(body.duration_minutes || '60', 10) || 60));
+        const location = String(body.location || 'FaceTime').trim().slice(0, 300) || 'FaceTime';
+        const notes = String(body.notes || '').trim().slice(0, 1000);
+        if (!title || title.length > 120) return errorResponse('Title required (max 120 characters).');
+        const parsedMs = Date.parse(String(body.starts_at || '').trim());
+        if (Number.isNaN(parsedMs)) return errorResponse('Invalid date or time.');
+
+        await env.DB
+          .prepare(`UPDATE events SET title = ?, starts_at = ?, duration_minutes = ?, location = ?, notes = ? WHERE id = ?`)
+          .bind(title, new Date(parsedMs).toISOString(), duration, location, notes, eventId)
+          .run();
+        // Bumps the poll state token so other clients see the change
+        await env.DB
+          .prepare(
+            `INSERT INTO app_counters (name, value) VALUES ('events_edited', 1)
+             ON CONFLICT(name) DO UPDATE SET value = value + 1`
+          )
+          .run();
+        const events = await fetchEvents(env.DB);
+        return jsonResponse({ events, nextEvent: computeNextEvent(events) });
+      }
+
       if (eventDeleteMatch && method === 'DELETE') {
         const user = await getCurrentUser(request, env.DB);
         if (!user) return errorResponse('Authentication required.', 401);

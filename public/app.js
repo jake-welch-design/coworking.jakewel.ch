@@ -703,6 +703,7 @@
         if (!requireAuth()) return;
         state.openUserMenu = null;
         // Pre-fill a new event and open the form
+        setEventFormMode(null);
         el.eventTitleInput.value = `Call with ${u.username}`;
         state.pendingInvite = u;   // emailed the call details once it's created (if they allow emails)
         ensureEventDefaults();
@@ -964,6 +965,39 @@
     finally { el.blockUploadStatus.hidden = true; el.addBlockSubmitBtn.disabled = false; }
   }
 
+  function fmtDuration(min) {
+    const h = Math.floor(min / 60), m = min % 60;
+    if (!h) return `${m} min`;
+    return m ? `${h} hr ${m} min` : `${h} hr`;
+  }
+
+  // Edit reuses the Schedule call form: fill it with the call, and Save sends a PATCH
+  function setEventFormMode(editingId) {
+    state.editingEventId = editingId || null;
+    el.newEventForm.querySelector('button[type="submit"]').textContent = editingId ? 'Save' : 'Add';
+  }
+
+  function startEditEvent(ev) {
+    if (!requireAuth()) return;
+    const d = new Date(ev.starts_at);
+    state.pendingInvite = null;
+    setEventFormMode(ev.id);
+    el.eventTitleInput.value = ev.title;
+    el.eventDateInput.value = dateKey(d);
+    el.eventTimeInput.value = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const dur = String(ev.duration_minutes || 60);
+    if (![...el.eventDurationInput.options].some(o => o.value === dur)) {
+      el.eventDurationInput.appendChild(new Option(`${dur}m`, dur));
+    }
+    el.eventDurationInput.value = dur;
+    el.eventLocationInput.value = ev.location || 'FaceTime';
+    el.eventNotesInput.value = ev.notes || '';
+    el.eventFormError.hidden = true;
+    el.newEventDetails.open = true;
+    el.newEventDetails.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    el.eventTitleInput.focus();
+  }
+
   function ensureEventDefaults() {
     if (!el.eventDateInput.value) el.eventDateInput.value = state.selectedDateKey || dateKey(new Date());
     if (!el.eventTimeInput.value) {
@@ -1082,36 +1116,53 @@
       return;
     }
     for (const ev of filtered) {
+      // Title / date, time / location (duration) / notes / Hosted by / Attending list / actions
       const li = document.createElement('li');
-      const ts = document.createElement('strong'); ts.textContent = ev.title; li.appendChild(ts);
-      li.appendChild(document.createTextNode(` — ${fmtDT(ev.starts_at)} (${ev.duration_minutes||60}m) — `));
-      linkify(li, ev.location||'FaceTime');
-      if (ev.notes) { li.appendChild(document.createElement('br')); linkify(li, ev.notes); }
-      li.appendChild(document.createElement('br'));
-      const sm = document.createElement('small');
-      const att = ev.attendees||[];
-      if (ev.creator_username) sm.appendChild(badge(ev.creator_username, ev.creator_color, ev.creator_font));
-      if (att.length) {
-        if (sm.childNodes.length) sm.appendChild(document.createTextNode(' · '));
-        sm.appendChild(document.createTextNode('Attending: '));
-        att.forEach((a,i) => { if (i) sm.appendChild(document.createTextNode(', ')); sm.appendChild(badge(a.username, a.name_color, a.name_font)); });
+      li.className = 'event-item';
+      const line = (cls) => { const d = document.createElement('div'); if (cls) d.className = cls; li.appendChild(d); return d; };
+
+      const ts = document.createElement('strong'); ts.textContent = ev.title; line('event-title').appendChild(ts);
+      line().textContent = fmtDT(ev.starts_at);
+      const loc = line();
+      linkify(loc, ev.location || 'FaceTime');
+      loc.appendChild(document.createTextNode(` (${fmtDuration(ev.duration_minutes || 60)})`));
+      if (ev.notes) linkify(line('event-notes'), ev.notes);
+      if (ev.creator_username) {
+        const host = line('event-host');
+        host.appendChild(document.createTextNode('Hosted by '));
+        host.appendChild(badge(ev.creator_username, ev.creator_color, ev.creator_font));
       }
+      const att = ev.attendees || [];
+      if (att.length) {
+        line().textContent = 'Attending:';
+        const ul = document.createElement('ul');
+        ul.className = 'event-attendees';
+        for (const a of att) {
+          const ali = document.createElement('li');
+          ali.appendChild(badge(a.username, a.name_color, a.name_font));
+          ul.appendChild(ali);
+        }
+        li.appendChild(ul);
+      }
+
+      const actions = line('event-actions');
+      const sep = () => actions.appendChild(document.createTextNode(' • '));
       const joining = state.user && att.some(a => a.id === state.user.id);
-      if (sm.childNodes.length) sm.appendChild(document.createTextNode(' · '));
-      sm.appendChild(actionLink(joining ? 'Leave' : 'Join', async () => {
+      actions.appendChild(actionLink(joining ? 'Leave' : 'Join', async () => {
         if (!requireAuth()) return;
         const d = await api(`/api/events/${ev.id}/rsvp`, { method:'POST' });
         state.events = d.events||[]; renderCalendar(); renderBanner();
       }));
       if (state.user && ev.created_by === state.user.id) {
-        sm.appendChild(document.createTextNode(' · '));
-        sm.appendChild(actionLink('Delete', async () => {
+        sep();
+        actions.appendChild(actionLink('Delete', async () => {
           if (!confirm(`Delete "${ev.title}"?`)) return;
           const d = await api(`/api/events/${ev.id}`, { method:'DELETE' });
           state.events = d.events||[]; renderCalendar(); renderBanner();
         }));
+        sep();
+        actions.appendChild(actionLink('Edit', () => startEditEvent(ev)));
       }
-      li.appendChild(sm);
       el.eventsList.appendChild(li);
     }
   }
@@ -1431,10 +1482,13 @@
       el.eventFormError.hidden = true;
       el.newEventDetails.open = false;
       state.pendingInvite = null;
+      setEventFormMode(null);
     });
 
     document.getElementById('schedule-call-btn').addEventListener('click', () => {
       state.pendingInvite = null;
+      // Coming from an edit: start a fresh call instead
+      if (state.editingEventId) { el.newEventForm.reset(); setEventFormMode(null); el.newEventDetails.open = false; }
       el.newEventDetails.open = !el.newEventDetails.open;
     });
     el.newEventDetails.addEventListener('toggle', () => {
@@ -1458,12 +1512,16 @@
           location: el.eventLocationInput.value.trim()||'FaceTime',
           notes: el.eventNotesInput.value.trim()
         };
-        const d = await api('/api/events', { method:'POST', body: payload });
+        const editingId = state.editingEventId;
+        const d = editingId
+          ? await api(`/api/events/${editingId}`, { method:'PATCH', body: payload })
+          : await api('/api/events', { method:'POST', body: payload });
         state.events = d.events||[];
         const invitee = state.pendingInvite;
         state.pendingInvite = null;
-        if (invitee?.email) emailInvite(invitee, payload);
+        if (invitee?.email && !editingId) emailInvite(invitee, payload);
         el.eventTitleInput.value = ''; el.eventNotesInput.value = ''; el.newEventDetails.open = false;
+        setEventFormMode(null);
         state.calYear = ld.getFullYear(); state.calMonth = ld.getMonth();
         renderCalendar(); renderBanner();
       } catch (e) { el.eventFormError.textContent = e.message; el.eventFormError.hidden = false; }
@@ -1589,13 +1647,42 @@
       items.forEach(i => i.classList.toggle('active', i.dataset.src === cur));
     };
 
-    const toggle = (src) => {
-      const playingThis = !audio.paused && audio.dataset.src === src;
-      audio.pause();
-      if (playingThis) { audio.removeAttribute('src'); delete audio.dataset.src; audio.load(); render(); return; }
+    // NTS's stream servers sometimes return 404/503 for a mixtape; each request can land on a
+    // different server, so retry a few times before giving up and flagging it unavailable.
+    const MAX_RETRIES = 4;
+    let retries = 0, retryTimer = null;
+    const start = (src) => {
       audio.src = src; audio.dataset.src = src; audio.volume = vol / 100;
       render();
       audio.play().then(render).catch(render);
+    };
+    audio.addEventListener('playing', () => { retries = 0; });
+    audio.addEventListener('error', () => {
+      const src = audio.dataset.src;
+      if (!src) return;
+      if (retries < MAX_RETRIES) {
+        retries++;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => { if (audio.dataset.src === src) start(src); }, 1500);
+        return;
+      }
+      retries = 0;
+      delete audio.dataset.src; audio.removeAttribute('src');
+      render();
+      const item = [...items].find(i => i.dataset.src === src);
+      const btn = item ? mixBtn : [...btns].find(b => b.dataset.src === src);
+      if (btn) {
+        btn.textContent = 'Unavailable';
+        setTimeout(render, 3000);
+      }
+    });
+
+    const toggle = (src) => {
+      const playingThis = audio.dataset.src === src && (!audio.paused || retries > 0);
+      clearTimeout(retryTimer); retries = 0;
+      audio.pause();
+      if (playingThis) { audio.removeAttribute('src'); delete audio.dataset.src; audio.load(); render(); return; }
+      start(src);
     };
 
     btns.forEach(b => b.addEventListener('click', () => toggle(b.dataset.src)));

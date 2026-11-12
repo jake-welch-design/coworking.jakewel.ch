@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reset password — Coworking</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header id="site-header">
+    <strong><a href="/">Coworking</a></strong>
+    <span><a href="/login.html">Log in</a></span>
+  </header>
+  <hr />
+
+  <div class="pane page-form">
+    <h2 class="pane-title">Choose a new password</h2>
+    <form id="reset-form">
+      <p>
+        <label>New password<br />
+          <input type="password" id="reset-password" autocomplete="new-password" minlength="6" required />
+        </label>
+      </p>
+      <p>
+        <label>Confirm new password<br />
+          <input type="password" id="reset-confirm" autocomplete="new-password" minlength="6" required />
+        </label>
+      </p>
+      <p id="reset-error" hidden></p>
+      <p><button type="submit" id="reset-submit">Save password</button></p>
+    </form>
+    <p id="reset-invalid" hidden>
+      This reset link is missing or incomplete. Ask the site admin for a new one.
+    </p>
+  </div>
+
+  <script>
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const form = document.getElementById('reset-form');
+    const errEl = document.getElementById('reset-error');
+
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      form.hidden = true;
+      document.getElementById('reset-invalid').hidden = false;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errEl.hidden = true;
+      const password = document.getElementById('reset-password').value;
+      if (password !== document.getElementById('reset-confirm').value) {
+        errEl.textContent = "The passwords don't match.";
+        errEl.hidden = false;
+        return;
+      }
+      const btn = document.getElementById('reset-submit');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/auth/reset', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Could not reset the password.');
+        // Logged in with the new password
+        window.location.href = '/';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
