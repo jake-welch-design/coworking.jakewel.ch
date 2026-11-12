@@ -1097,13 +1097,13 @@ summary.bevel-btn::-webkit-details-marker {
 
 .goal {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   padding: 2px 0;
 }
 
 .goal input[type="checkbox"] {
-  margin: 0;
+  margin: 3px 0 0;
   flex: none;
 }
 
@@ -1113,9 +1113,30 @@ summary.bevel-btn::-webkit-details-marker {
   width: auto;
 }
 
-.goal.done input.goal-input {
+.goal-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  padding: 2px 0;
+}
+
+.goal-text.editable {
+  cursor: text;
+}
+
+.goal.done .goal-text {
   text-decoration: line-through;
   color: #777777;
+}
+
+textarea.goal-edit {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  overflow: hidden;
+  font: inherit;
+  line-height: inherit;
 }
 
 .goal-user {

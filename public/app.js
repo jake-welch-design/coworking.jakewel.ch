@@ -1191,6 +1191,8 @@
     renderGoals();
   }
 
+  // Entered goals show as wrapping text; blank rows are inputs for new goals.
+  // Click your own open goal to edit it (a textarea that grows with the text).
   function goalRow(g) {
     const li = document.createElement('li');
     li.className = 'goal' + (g?.done ? ' done' : '');
@@ -1199,60 +1201,82 @@
     box.checked = Boolean(g?.done);
     box.disabled = !g || !state.user;
     box.setAttribute('aria-label', g ? `Mark "${g.body}" ${g.done ? 'not done' : 'done'}` : 'New goal');
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'goal-input';
-    input.maxLength = 280;
-    input.value = g ? g.body : '';
-    if (!g) input.classList.add('goal-blank');
-    input.setAttribute('aria-label', g ? 'Goal' : 'New goal');
-    const mine = g && state.user && g.created_by === state.user.id;
-    input.readOnly = g ? !mine || g.done : !state.user;
-    li.append(box, input);
+    li.appendChild(box);
 
-    if (g) {
-      const who = badge(g.username || 'former member', g.name_color, g.name_font);
-      who.classList.add('goal-user');
-      li.appendChild(who);
-      box.addEventListener('change', () => {
-        if (!requireAuth()) { box.checked = g.done; return; }
-        box.disabled = true;
-        goalRequest(`/api/goals/${g.id}`, 'PATCH', { done: box.checked });
-      });
-    }
-
-    let committed = false;
-    const commit = (keepFocus) => {
-      if (committed) return;
-      const text = input.value.trim();
-      if (!g) {
-        if (!text) return;
+    if (!g) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'goal-input goal-blank';
+      input.maxLength = 280;
+      input.readOnly = !state.user;
+      input.setAttribute('aria-label', 'New goal');
+      li.appendChild(input);
+      let committed = false;
+      const commit = (keepFocus) => {
+        const text = input.value.trim();
+        if (committed || !text) return;
         committed = true; input.readOnly = true;
         goalRequest('/api/goals', 'POST', { body: text }).then(() => {
           // Keep typing: jump to the next blank row
           if (keepFocus) document.querySelector('#goals-list .goal-blank')?.focus();
         });
-      } else if (mine && !g.done && text !== g.body) {
-        committed = true; input.readOnly = true;
-        if (!text) {
-          if (!confirm('Delete this goal?')) { input.value = g.body; committed = false; input.readOnly = false; return; }
-          goalRequest(`/api/goals/${g.id}`, 'DELETE');
-        } else {
-          goalRequest(`/api/goals/${g.id}`, 'PATCH', { body: text });
-        }
-      }
-    };
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
-      if (e.key === 'Escape') { input.value = g ? g.body : ''; input.blur(); }
+      };
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+        if (e.key === 'Escape') { input.value = ''; input.blur(); }
+      });
+      input.addEventListener('blur', () => { commit(false); if (goalsRenderPending) setTimeout(renderGoals, 0); });
+      input.addEventListener('focus', () => { if (!state.user) requireAuth(); });
+      return li;
+    }
+
+    const text = document.createElement('span');
+    text.className = 'goal-text';
+    linkify(text, g.body);
+    li.appendChild(text);
+    const who = badge(g.username || 'former member', g.name_color, g.name_font);
+    who.classList.add('goal-user');
+    li.appendChild(who);
+    box.addEventListener('change', () => {
+      if (!requireAuth()) { box.checked = g.done; return; }
+      box.disabled = true;
+      goalRequest(`/api/goals/${g.id}`, 'PATCH', { done: box.checked });
     });
-    input.addEventListener('blur', () => {
-      commit(false);
-      if (goalsRenderPending) setTimeout(renderGoals, 0);
-    });
-    if (!g) input.addEventListener('focus', () => { if (!state.user) requireAuth(); });
+
+    const mine = state.user && g.created_by === state.user.id;
+    if (mine && !g.done) {
+      text.classList.add('editable');
+      text.title = 'Click to edit';
+      text.addEventListener('click', e => {
+        if (e.target.closest('a')) return; // links open normally
+        const ta = document.createElement('textarea');
+        ta.className = 'goal-input goal-edit';
+        ta.maxLength = 280; ta.rows = 1; ta.value = g.body;
+        ta.setAttribute('aria-label', 'Edit goal');
+        const grow = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`; };
+        ta.addEventListener('input', grow);
+        text.replaceWith(ta);
+        grow(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+
+        let done = false;
+        const finish = (save) => {
+          if (done) return;
+          const val = ta.value.replace(/\s+/g, ' ').trim();
+          if (!save || val === g.body) { done = true; ta.replaceWith(text); if (goalsRenderPending) renderGoals(); return; }
+          if (!val && !confirm('Delete this goal?')) { ta.value = g.body; ta.focus(); return; }
+          done = true; ta.readOnly = true;
+          goalRequest(`/api/goals/${g.id}`, val ? 'PATCH' : 'DELETE', val ? { body: val } : undefined);
+        };
+        ta.addEventListener('keydown', e2 => {
+          if (e2.key === 'Enter') { e2.preventDefault(); finish(true); }
+          if (e2.key === 'Escape') { e2.preventDefault(); finish(false); }
+        });
+        ta.addEventListener('blur', () => finish(true));
+      });
+    }
     return li;
   }
+
 
   function bind() {
     ensureEventDefaults();
@@ -1327,6 +1351,11 @@
 
     el.newFolderDetails.addEventListener('toggle', () => {
       if (el.newFolderDetails.open && !state.user) { el.newFolderDetails.open = false; window.location.href = '/login.html'; }
+    });
+    document.getElementById('folder-cancel-btn').addEventListener('click', () => {
+      el.newFolderForm.reset();
+      el.folderFormError.hidden = true;
+      el.newFolderDetails.open = false;
     });
     el.newFolderForm.addEventListener('submit', async e => {
       e.preventDefault();
