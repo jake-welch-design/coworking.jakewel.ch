@@ -5,6 +5,8 @@ const SESSION_COOKIE = 'coworking_session';
 const SESSION_TTL_DAYS = 30;
 const D1_CHUNK_SIZE = 950_000; // ~950 KB per row (well below Cloudflare D1's 2 MB row limit)
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB max per file drop
+const MAX_CHAT_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB per chat attachment
+const CHAT_RETENTION_DAYS = 30; // group chat + DMs (and their attachments) are deleted after this
 
 export const ALLOWED_FONTS = [
   'Georgia, serif',
@@ -114,6 +116,14 @@ const SCHEMA_STATEMENTS = [
     updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     updated_at TEXT NOT NULL DEFAULT ''
   )`,
+  `CREATE TABLE IF NOT EXISTS goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    body TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS app_counters (
     name TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
@@ -137,7 +147,11 @@ const COLUMN_MIGRATIONS = [
   `ALTER TABLE blocks ADD COLUMN note TEXT`,
   `ALTER TABLE users ADD COLUMN allow_emails INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN last_seen_at TEXT`,
-  `ALTER TABLE users ADD COLUMN presence TEXT NOT NULL DEFAULT 'offline'`
+  `ALTER TABLE users ADD COLUMN presence TEXT NOT NULL DEFAULT 'offline'`,
+  `ALTER TABLE messages ADD COLUMN attachment_id TEXT`,
+  `ALTER TABLE direct_messages ADD COLUMN attachment_id TEXT`,
+  // 'chat' files are only served to logged-in members; resource files stay public for Are.na
+  `ALTER TABLE uploaded_files ADD COLUMN scope TEXT NOT NULL DEFAULT 'public'`
 ];
 
 // A user counts as offline if no heartbeat arrived within this window
@@ -323,9 +337,12 @@ async function fetchMessages(db, afterId = 0, limit = 150) {
     const { results } = await db
       .prepare(
         `SELECT m.id, m.body, m.created_at,
-                u.id AS user_id, u.username, u.name_color, u.name_font
+                u.id AS user_id, u.username, u.name_color, u.name_font,
+                f.id AS attachment_id, f.filename AS attachment_name,
+                f.mime_type AS attachment_type, f.size_bytes AS attachment_size
          FROM messages m
          JOIN users u ON u.id = m.user_id
+         LEFT JOIN uploaded_files f ON f.id = m.attachment_id
          WHERE m.id > ?
          ORDER BY m.id ASC
          LIMIT ?`
@@ -339,9 +356,12 @@ async function fetchMessages(db, afterId = 0, limit = 150) {
     .prepare(
       `SELECT * FROM (
          SELECT m.id, m.body, m.created_at,
-                u.id AS user_id, u.username, u.name_color, u.name_font
+                u.id AS user_id, u.username, u.name_color, u.name_font,
+                f.id AS attachment_id, f.filename AS attachment_name,
+                f.mime_type AS attachment_type, f.size_bytes AS attachment_size
          FROM messages m
          JOIN users u ON u.id = m.user_id
+         LEFT JOIN uploaded_files f ON f.id = m.attachment_id
          ORDER BY m.id DESC
          LIMIT ?
        ) ORDER BY id ASC`
@@ -403,6 +423,31 @@ async function fetchUsers(db, viewer = null) {
   });
 }
 
+// New DMs sent to this user (for notifications). With afterId null, returns only the latest id as a baseline.
+async function fetchIncomingDMs(db, userId, afterId) {
+  if (afterId === null) {
+    const row = await db
+      .prepare(`SELECT COALESCE(MAX(id), 0) AS max_id FROM direct_messages WHERE to_user_id = ?`)
+      .bind(userId)
+      .first();
+    return { dms: [], dmMaxId: row?.max_id || 0 };
+  }
+  const { results } = await db
+    .prepare(
+      `SELECT dm.id, dm.body, dm.created_at, dm.from_user_id,
+              u.username, u.name_color, u.name_font, dm.attachment_id
+       FROM direct_messages dm
+       JOIN users u ON u.id = dm.from_user_id
+       WHERE dm.to_user_id = ? AND dm.id > ?
+       ORDER BY dm.id ASC
+       LIMIT 50`
+    )
+    .bind(userId, afterId)
+    .all();
+  const dms = results || [];
+  return { dms, dmMaxId: dms.length ? dms[dms.length - 1].id : afterId };
+}
+
 async function fetchDMs(db, userA, userB, limit = 100) {
   const lo = Math.min(userA, userB);
   const hi = Math.max(userA, userB);
@@ -410,9 +455,12 @@ async function fetchDMs(db, userA, userB, limit = 100) {
     .prepare(
       `SELECT dm.id, dm.body, dm.created_at,
               dm.from_user_id, dm.to_user_id,
-              u.username, u.name_color, u.name_font
+              u.username, u.name_color, u.name_font,
+                f.id AS attachment_id, f.filename AS attachment_name,
+                f.mime_type AS attachment_type, f.size_bytes AS attachment_size
        FROM direct_messages dm
        JOIN users u ON u.id = dm.from_user_id
+       LEFT JOIN uploaded_files f ON f.id = dm.attachment_id
        WHERE (dm.from_user_id = ? AND dm.to_user_id = ?)
           OR (dm.from_user_id = ? AND dm.to_user_id = ?)
        ORDER BY dm.id ASC
@@ -492,11 +540,27 @@ async function computeStateToken(db) {
          (SELECT COALESCE(MAX(id), 0) || ':' || COALESCE(SUM(allow_emails), 0) FROM users) AS u,
          (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm,
          (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'messages_deleted') AS md,
-         (SELECT COALESCE(MAX(updated_at), '') FROM shared_timer) AS t`
+         (SELECT COALESCE(MAX(updated_at), '') FROM shared_timer) AS t,
+         (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM goals) AS g`
     )
     .first();
   if (!row) return '0';
-  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.t}`;
+  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.t}|${row.g}`;
+}
+
+// --- Shared goals checklist ---
+
+async function fetchGoals(db) {
+  const { results } = await db
+    .prepare(
+      `SELECT g.id, g.body, g.done, g.created_at, g.created_by,
+              u.username, u.name_color, u.name_font
+       FROM goals g
+       LEFT JOIN users u ON u.id = g.created_by
+       ORDER BY g.id ASC`
+    )
+    .all();
+  return (results || []).map((g) => ({ ...g, done: Boolean(g.done) }));
 }
 
 // --- Shared session timer (one row for the whole room) ---
@@ -807,13 +871,16 @@ async function syncFolderWithArena(folder, db, env) {
 
 // --- File Upload & Serving Helpers ---
 
-async function storeUploadedFile(file, userId, db, env) {
+async function storeUploadedFile(file, userId, db, env, { maxBytes = MAX_UPLOAD_BYTES, scope = 'public' } = {}) {
+  if (typeof file.size === 'number' && file.size > maxBytes) {
+    throw new Error(`File exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit.`);
+  }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength === 0) {
     throw new Error('Uploaded file is empty.');
   }
-  if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-    throw new Error('File exceeds 15 MB limit.');
+  if (bytes.byteLength > maxBytes) {
+    throw new Error(`File exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit.`);
   }
 
   const fileId = bytesToHex(crypto.getRandomValues(new Uint8Array(12)));
@@ -827,18 +894,18 @@ async function storeUploadedFile(file, userId, db, env) {
     });
     await db
       .prepare(
-        `INSERT INTO uploaded_files (id, filename, mime_type, size_bytes, storage, uploaded_by, created_at)
-         VALUES (?, ?, ?, ?, 'r2', ?, ?)`
+        `INSERT INTO uploaded_files (id, filename, mime_type, size_bytes, storage, uploaded_by, created_at, scope)
+         VALUES (?, ?, ?, ?, 'r2', ?, ?, ?)`
       )
-      .bind(fileId, filename, mimeType, bytes.byteLength, userId, nowIso)
+      .bind(fileId, filename, mimeType, bytes.byteLength, userId, nowIso, scope)
       .run();
   } else {
     await db
       .prepare(
-        `INSERT INTO uploaded_files (id, filename, mime_type, size_bytes, storage, uploaded_by, created_at)
-         VALUES (?, ?, ?, ?, 'd1', ?, ?)`
+        `INSERT INTO uploaded_files (id, filename, mime_type, size_bytes, storage, uploaded_by, created_at, scope)
+         VALUES (?, ?, ?, ?, 'd1', ?, ?, ?)`
       )
-      .bind(fileId, filename, mimeType, bytes.byteLength, userId, nowIso)
+      .bind(fileId, filename, mimeType, bytes.byteLength, userId, nowIso, scope)
       .run();
 
     let chunkIndex = 0;
@@ -870,12 +937,16 @@ function isSafeInlineMime(mime) {
   );
 }
 
-async function serveUploadedFile(fileId, db, env) {
+async function serveUploadedFile(fileId, db, env, request) {
   const meta = await db
-    .prepare(`SELECT id, filename, mime_type, size_bytes, storage FROM uploaded_files WHERE id = ?`)
+    .prepare(`SELECT id, filename, mime_type, size_bytes, storage, scope FROM uploaded_files WHERE id = ?`)
     .bind(fileId)
     .first();
   if (!meta) return new Response('File not found', { status: 404 });
+  const isChatFile = meta.scope === 'chat';
+  if (isChatFile && !(await getCurrentUser(request, db))) {
+    return new Response('Log in to view this file', { status: 401 });
+  }
 
   const disposition = isSafeInlineMime(meta.mime_type)
     ? `inline; filename="${meta.filename.replace(/"/g, '')}"`
@@ -886,7 +957,7 @@ async function serveUploadedFile(fileId, db, env) {
     'Content-Disposition': disposition,
     'Content-Security-Policy': "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
     'X-Content-Type-Options': 'nosniff',
-    'Cache-Control': 'public, max-age=31536000, immutable'
+    'Cache-Control': isChatFile ? 'private, max-age=86400' : 'public, max-age=31536000, immutable'
   };
 
   if (meta.storage === 'r2' && env.FILES_BUCKET) {
@@ -911,6 +982,78 @@ async function serveUploadedFile(fileId, db, env) {
   return new Response(total, { headers });
 }
 
+async function deleteUploadedFile(db, env, fileId) {
+  if (!fileId) return;
+  const meta = await db
+    .prepare(`SELECT id, filename, storage FROM uploaded_files WHERE id = ?`)
+    .bind(fileId)
+    .first();
+  if (!meta) return;
+  if (meta.storage === 'r2' && env.FILES_BUCKET) {
+    await env.FILES_BUCKET.delete(`${meta.id}/${meta.filename}`).catch(() => {});
+  }
+  await db.prepare(`DELETE FROM uploaded_file_chunks WHERE file_id = ?`).bind(meta.id).run();
+  await db.prepare(`DELETE FROM uploaded_files WHERE id = ?`).bind(meta.id).run();
+}
+
+// A chat attachment the sender may attach to a message: theirs, chat-scoped, not yet used
+async function claimChatAttachment(db, attachmentId, userId) {
+  if (!attachmentId) return null;
+  const f = await db
+    .prepare(
+      `SELECT id, filename, mime_type, size_bytes FROM uploaded_files
+       WHERE id = ? AND uploaded_by = ? AND scope = 'chat'
+         AND NOT EXISTS (SELECT 1 FROM messages WHERE attachment_id = uploaded_files.id)
+         AND NOT EXISTS (SELECT 1 FROM direct_messages WHERE attachment_id = uploaded_files.id)`
+    )
+    .bind(String(attachmentId), userId)
+    .first();
+  if (!f) throw new Error('Attachment not found.');
+  return f;
+}
+
+function attachmentFields(f) {
+  return f
+    ? { attachment_id: f.id, attachment_name: f.filename, attachment_type: f.mime_type, attachment_size: f.size_bytes }
+    : { attachment_id: null };
+}
+
+// Deletes group chat + DMs older than CHAT_RETENTION_DAYS, their attachments,
+// and chat uploads that were never sent (older than a day). Runs daily from the cron trigger.
+async function purgeOldChat(env) {
+  const db = env.DB;
+  const cutoff = new Date(Date.now() - CHAT_RETENTION_DAYS * 86400000).toISOString();
+  const orphanCutoff = new Date(Date.now() - 86400000).toISOString();
+
+  const { results: oldFiles } = await db
+    .prepare(
+      `SELECT attachment_id AS id FROM messages WHERE created_at < ? AND attachment_id IS NOT NULL
+       UNION
+       SELECT attachment_id AS id FROM direct_messages WHERE created_at < ? AND attachment_id IS NOT NULL
+       UNION
+       SELECT f.id FROM uploaded_files f
+       WHERE f.scope = 'chat' AND f.created_at < ?
+         AND NOT EXISTS (SELECT 1 FROM messages WHERE attachment_id = f.id)
+         AND NOT EXISTS (SELECT 1 FROM direct_messages WHERE attachment_id = f.id)`
+    )
+    .bind(cutoff, cutoff, orphanCutoff)
+    .all();
+  for (const row of oldFiles || []) await deleteUploadedFile(db, env, row.id);
+
+  const m = await db.prepare(`DELETE FROM messages WHERE created_at < ?`).bind(cutoff).run();
+  const dm = await db.prepare(`DELETE FROM direct_messages WHERE created_at < ?`).bind(cutoff).run();
+  if ((m.meta?.changes || 0) + (dm.meta?.changes || 0) > 0) {
+    // Bumps the poll state token so open clients reload the chat
+    await db
+      .prepare(
+        `INSERT INTO app_counters (name, value) VALUES ('messages_deleted', 1)
+         ON CONFLICT(name) DO UPDATE SET value = value + 1`
+      )
+      .run();
+  }
+  return { messages: m.meta?.changes || 0, dms: dm.meta?.changes || 0, files: (oldFiles || []).length };
+}
+
 function looksLikeUrl(str) {
   const trimmed = String(str || '').trim();
   if (!/^https?:\/\/\S+$/i.test(trimmed)) return false;
@@ -925,6 +1068,15 @@ function looksLikeUrl(str) {
 // --- Main Worker Router ---
 
 export default {
+  // Daily cron (see wrangler.toml): delete chat history older than CHAT_RETENTION_DAYS
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      await ensureSchema(env.DB);
+      const purged = await purgeOldChat(env);
+      console.log('Chat purge', purged);
+    })());
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
     const { pathname } = url;
@@ -954,19 +1106,21 @@ export default {
         const parts = pathname.slice('/api/files/'.length).split('/');
         const fileId = parts[0];
         if (!fileId) return errorResponse('Missing file ID', 400);
-        return await serveUploadedFile(fileId, env.DB, env);
+        return await serveUploadedFile(fileId, env.DB, env, request);
       }
 
       // 2. Bootstrap Endpoint
       if (method === 'GET' && pathname === '/api/bootstrap') {
         const user = await getCurrentUser(request, env.DB);
-        const [messages, folders, events, stateToken, users, timer] = await Promise.all([
-          fetchMessages(env.DB, 0, 150),
+        // Chat is members-only: logged-out visitors get no messages
+        const [messages, folders, events, stateToken, users, timer, goals] = await Promise.all([
+          user ? fetchMessages(env.DB, 0, 150) : [],
           fetchFolders(env.DB),
           fetchEvents(env.DB),
           computeStateToken(env.DB),
           fetchUsers(env.DB, user),
-          fetchTimer(env.DB)
+          fetchTimer(env.DB),
+          fetchGoals(env.DB)
         ]);
         return jsonResponse({
           user,
@@ -981,6 +1135,7 @@ export default {
           events,
           nextEvent: computeNextEvent(events),
           timer,
+          goals,
           stateToken
         });
       }
@@ -988,11 +1143,15 @@ export default {
       // 3. Lightweight Live Poll
       if (method === 'GET' && pathname === '/api/poll') {
         const afterMsg = Math.max(0, parseInt(url.searchParams.get('after_msg') || '0', 10) || 0);
-        const [messages, stateToken] = await Promise.all([
-          fetchMessages(env.DB, afterMsg, 100),
-          computeStateToken(env.DB)
+        const afterDmRaw = url.searchParams.get('after_dm');
+        const afterDm = afterDmRaw === null ? null : Math.max(0, parseInt(afterDmRaw, 10) || 0);
+        const pollUser = await getCurrentUser(request, env.DB);
+        const [messages, stateToken, incoming] = await Promise.all([
+          pollUser ? fetchMessages(env.DB, afterMsg, 100) : [],
+          computeStateToken(env.DB),
+          pollUser ? fetchIncomingDMs(env.DB, pollUser.id, afterDm) : { dms: [], dmMaxId: 0 }
         ]);
-        return jsonResponse({ messages, stateToken });
+        return jsonResponse({ messages, stateToken, ...incoming });
       }
 
       // 4. Auth: Sign Up
@@ -1122,9 +1281,81 @@ export default {
         });
       }
 
+      // 7a. Goals: shared checklist. Anyone can view; members add and tick; you delete your own.
+      if (pathname === '/api/goals') {
+        if (method === 'GET') return jsonResponse({ goals: await fetchGoals(env.DB) });
+        if (method === 'POST') {
+          const user = await getCurrentUser(request, env.DB);
+          if (!user) return errorResponse('Authentication required.', 401);
+          const body = await request.json().catch(() => ({}));
+          const text = String(body.body || '').trim();
+          if (!text) return errorResponse('Empty goal.');
+          if (text.length > 280) return errorResponse('Goals can be up to 280 characters.');
+          const nowIso = new Date().toISOString();
+          await env.DB
+            .prepare(`INSERT INTO goals (body, done, created_by, created_at, updated_at) VALUES (?, 0, ?, ?, ?)`)
+            .bind(text, user.id, nowIso, nowIso)
+            .run();
+          return jsonResponse({ goals: await fetchGoals(env.DB) }, 201);
+        }
+      }
+
+      const goalMatch = pathname.match(/^\/api\/goals\/(\d+)$/);
+      if (goalMatch && (method === 'PATCH' || method === 'DELETE')) {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const goalId = parseInt(goalMatch[1], 10);
+        if (method === 'PATCH') {
+          const body = await request.json().catch(() => ({}));
+          const res = await env.DB
+            .prepare(`UPDATE goals SET done = ?, updated_at = ? WHERE id = ?`)
+            .bind(body.done ? 1 : 0, new Date().toISOString(), goalId)
+            .run();
+          if (!res.meta?.changes) return errorResponse('Goal not found.', 404);
+        } else {
+          const res = await env.DB
+            .prepare(`DELETE FROM goals WHERE id = ? AND created_by = ?`)
+            .bind(goalId, user.id)
+            .run();
+          if (!res.meta?.changes) return errorResponse('Goal not found.', 404);
+        }
+        return jsonResponse({ goals: await fetchGoals(env.DB) });
+      }
+
+      // 7b. Chat attachment upload (members only). The returned id is then sent with a message.
+      if (method === 'POST' && pathname === '/api/chat-attachments') {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const declared = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (declared > MAX_CHAT_ATTACHMENT_BYTES + 64 * 1024) {
+          return errorResponse('File exceeds 10 MB limit.', 413);
+        }
+        const form = await request.formData().catch(() => null);
+        const file = form?.get('file');
+        if (!file || typeof file.arrayBuffer !== 'function') return errorResponse('No file received.');
+        try {
+          const stored = await storeUploadedFile(file, user.id, env.DB, env, {
+            maxBytes: MAX_CHAT_ATTACHMENT_BYTES,
+            scope: 'chat'
+          });
+          return jsonResponse({
+            attachment: {
+              id: stored.fileId,
+              filename: stored.filename,
+              mime_type: stored.mimeType,
+              size_bytes: stored.sizeBytes
+            }
+          }, 201);
+        } catch (err) {
+          return errorResponse(err.message, 400);
+        }
+      }
+
       // 8. Chat Messages
       if (pathname === '/api/messages') {
         if (method === 'GET') {
+          const viewer = await getCurrentUser(request, env.DB);
+          if (!viewer) return errorResponse('Authentication required.', 401);
           const afterId = Math.max(0, parseInt(url.searchParams.get('after') || '0', 10) || 0);
           const messages = await fetchMessages(env.DB, afterId, 150);
           return jsonResponse({ messages });
@@ -1136,19 +1367,23 @@ export default {
 
           const body = await request.json().catch(() => ({}));
           const text = String(body.body || '').trim();
-          if (!text) return errorResponse('Empty message.');
+          let attachment = null;
+          try { attachment = await claimChatAttachment(env.DB, body.attachment_id, user.id); }
+          catch (err) { return errorResponse(err.message, 400); }
+          if (!text && !attachment) return errorResponse('Empty message.');
           if (text.length > 2000) return errorResponse('Message exceeds 2000 characters.');
 
           const nowIso = new Date().toISOString();
           const res = await env.DB
-            .prepare(`INSERT INTO messages (user_id, body, created_at) VALUES (?, ?, ?)`)
-            .bind(user.id, text, nowIso)
+            .prepare(`INSERT INTO messages (user_id, body, created_at, attachment_id) VALUES (?, ?, ?, ?)`)
+            .bind(user.id, text, nowIso, attachment?.id || null)
             .run();
 
           const created = {
             id: res.meta?.last_row_id,
             body: text,
             created_at: nowIso,
+            ...attachmentFields(attachment),
             user_id: user.id,
             username: user.username,
             name_color: user.name_color,
@@ -1163,11 +1398,14 @@ export default {
       if (method === 'DELETE' && msgDeleteMatch) {
         const user = await getCurrentUser(request, env.DB);
         if (!user) return errorResponse('Authentication required.', 401);
-        const res = await env.DB
-          .prepare(`DELETE FROM messages WHERE id = ? AND user_id = ?`)
-          .bind(parseInt(msgDeleteMatch[1], 10), user.id)
-          .run();
-        if (!res.meta?.changes) return errorResponse('Message not found.', 404);
+        const msgId = parseInt(msgDeleteMatch[1], 10);
+        const own = await env.DB
+          .prepare(`SELECT attachment_id FROM messages WHERE id = ? AND user_id = ?`)
+          .bind(msgId, user.id)
+          .first();
+        if (!own) return errorResponse('Message not found.', 404);
+        await env.DB.prepare(`DELETE FROM messages WHERE id = ?`).bind(msgId).run();
+        await deleteUploadedFile(env.DB, env, own.attachment_id);
         // Bumps the poll state token so other clients reload the chat
         await env.DB
           .prepare(
@@ -1183,11 +1421,14 @@ export default {
       if (method === 'DELETE' && dmDeleteMatch) {
         const user = await getCurrentUser(request, env.DB);
         if (!user) return errorResponse('Authentication required.', 401);
-        const res = await env.DB
-          .prepare(`DELETE FROM direct_messages WHERE id = ? AND from_user_id = ?`)
-          .bind(parseInt(dmDeleteMatch[1], 10), user.id)
-          .run();
-        if (!res.meta?.changes) return errorResponse('Message not found.', 404);
+        const dmId = parseInt(dmDeleteMatch[1], 10);
+        const own = await env.DB
+          .prepare(`SELECT attachment_id FROM direct_messages WHERE id = ? AND from_user_id = ?`)
+          .bind(dmId, user.id)
+          .first();
+        if (!own) return errorResponse('Message not found.', 404);
+        await env.DB.prepare(`DELETE FROM direct_messages WHERE id = ?`).bind(dmId).run();
+        await deleteUploadedFile(env.DB, env, own.attachment_id);
         return jsonResponse({ ok: true });
       }
 
@@ -1622,19 +1863,23 @@ export default {
         if (method === 'POST') {
           const body = await request.json().catch(() => ({}));
           const text = String(body.body || '').trim();
-          if (!text) return errorResponse('Empty message.');
+          let attachment = null;
+          try { attachment = await claimChatAttachment(env.DB, body.attachment_id, user.id); }
+          catch (err) { return errorResponse(err.message, 400); }
+          if (!text && !attachment) return errorResponse('Empty message.');
           if (text.length > 2000) return errorResponse('Message exceeds 2000 characters.');
 
           const nowIso = new Date().toISOString();
           const res = await env.DB
-            .prepare(`INSERT INTO direct_messages (from_user_id, to_user_id, body, created_at) VALUES (?, ?, ?, ?)`)
-            .bind(user.id, otherUserId, text, nowIso)
+            .prepare(`INSERT INTO direct_messages (from_user_id, to_user_id, body, created_at, attachment_id) VALUES (?, ?, ?, ?, ?)`)
+            .bind(user.id, otherUserId, text, nowIso, attachment?.id || null)
             .run();
 
           const created = {
             id: res.meta?.last_row_id,
             body: text,
             created_at: nowIso,
+            ...attachmentFields(attachment),
             from_user_id: user.id,
             to_user_id: otherUserId,
             username: user.username,

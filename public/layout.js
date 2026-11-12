@@ -5,13 +5,13 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "coworking.layout.v7";
+  const STORAGE_KEY = "coworking.layout.v8";
   const GUTTER_PX = 20;
   const MIN_W = 160; // min column width
   const MIN_H = 120; // min pane height
   const EDGE_PX = 8; // grab zone at a pane's edge
   const NEW_COL_ZONE = 0.22; // outer fraction of a column that means "make a new column here"
-  const PANE_IDS = ["resources", "calendar", "timer", "lounge"];
+  const PANE_IDS = ["resources", "calendar", "timer", "lounge", "goals"];
   const DEFAULT_LAYOUT = () => ({
     columns: [
       { w: 15, panes: [{ id: "resources", h: 1 }] },
@@ -22,7 +22,8 @@
           { id: "calendar", h: 3 },
         ],
       },
-      { w: 70, panes: [{ id: "lounge", h: 1 }] },
+      { w: 55, panes: [{ id: "lounge", h: 1 }] },
+      { w: 15, panes: [{ id: "goals", h: 1 }] },
     ],
   });
 
@@ -36,7 +37,7 @@
   const mobileQuery = window.matchMedia("(max-width: 768px)");
   const mediumQuery = window.matchMedia("(max-width: 1200px)");
   const MEDIUM_MAX_COLS = 2;
-  const MOBILE_ORDER = ["lounge", "calendar", "timer", "resources"];
+  const MOBILE_ORDER = ["lounge", "goals", "calendar", "timer", "resources"];
 
   const indicator = document.createElement("div");
   indicator.className = "drop-indicator";

@@ -348,19 +348,104 @@
     });
     allowLabel.appendChild(allowBox);
     allowLabel.appendChild(document.createTextNode(' allow emails'));
-    el.authBar.appendChild(allowLabel);
-    el.authBar.appendChild(document.createTextNode(' · '));
+    el.authBar.appendChild(document.createTextNode('· '));
     const styleLink = document.createElement('a');
     styleLink.href = '/style.html';
     styleLink.textContent = 'Style';
     el.authBar.appendChild(styleLink);
     el.authBar.appendChild(document.createTextNode(' · '));
+    el.authBar.appendChild(allowLabel);
+    if ('Notification' in window) {
+      el.authBar.appendChild(document.createTextNode(' · '));
+      el.authBar.appendChild(notifyCheckbox());
+    }
+    el.authBar.appendChild(document.createTextNode(' · '));
     el.authBar.appendChild(actionLink('Log out', async () => {
       await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
       state.user = null;
+      state.dmMaxId = undefined;
       renderAll();
     }));
     el.chatInput.placeholder = 'Message';
+  }
+
+  // --- Browser notifications for chat (opt-in per browser, since permission is per browser) ---
+  const NOTIFY_KEY = 'coworking.notify';
+  function notifyEnabled() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+    try { return localStorage.getItem(NOTIFY_KEY) === '1'; } catch { return false; }
+  }
+  function setNotifyPref(on) { try { localStorage.setItem(NOTIFY_KEY, on ? '1' : '0'); } catch {} }
+
+  function notifyCheckbox() {
+    const label = document.createElement('label');
+    label.id = 'notify-label';
+    label.className = 'header-check';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = notifyEnabled();
+    box.addEventListener('change', async () => {
+      if (!box.checked) { setNotifyPref(false); return; }
+      let perm = Notification.permission;
+      if (perm === 'default') perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        box.checked = false; setNotifyPref(false);
+        alert('Notifications are blocked for this site. Allow them in your browser\'s site settings, then try again.');
+        return;
+      }
+      setNotifyPref(true);
+    });
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(' notifications'));
+    return label;
+  }
+
+  // Only pop up when the person isn't looking at the page
+  function shouldNotify() {
+    return notifyEnabled() && (document.hidden || !document.hasFocus());
+  }
+
+  function showNotification(title, body, onClick) {
+    body = String(body || '').trim() || 'Sent an attachment';
+    try {
+      const n = new Notification(title, {
+        body: body.length > 140 ? body.slice(0, 139) + '…' : body,
+        tag: 'coworking-chat'
+      });
+      n.onclick = () => { window.focus(); n.close(); onClick?.(); };
+    } catch {}
+  }
+
+  function notifyGroup(msgs) {
+    const mine = state.user?.id;
+    const others = msgs.filter(m => m.user_id !== mine);
+    if (!others.length || !shouldNotify()) return;
+    const last = others[others.length - 1];
+    const title = others.length > 1 ? `${others.length} new messages in Lounge` : `${last.username} in Lounge`;
+    showNotification(title, others.length > 1 ? `${last.username}: ${last.body}` : last.body, () => {
+      state.activeTab = 'group'; renderChatTabs(); renderActiveChat(true); setMobileView('lounge');
+    });
+  }
+
+  function notifyDMs(dms) {
+    if (!dms.length) return;
+    // Keep any open conversation with these senders up to date
+    for (const id of new Set(dms.map(d => d.from_user_id))) {
+      if (state.dmTabs.some(t => t.id === id)) {
+        api(`/api/dm/${id}`).then(d => {
+          state.dmMessages[id] = d.messages || [];
+          if (state.activeTab === id) renderActiveChat(false);
+        }).catch(() => {});
+      }
+    }
+    if (!shouldNotify()) return;
+    const last = dms[dms.length - 1];
+    const title = dms.length > 1 ? `${dms.length} new direct messages` : `${last.username} (direct message)`;
+    showNotification(title, dms.length > 1 ? `${last.username}: ${last.body}` : last.body, () => {
+      const u = state.users.find(x => x.id === last.from_user_id) ||
+        { id: last.from_user_id, username: last.username, name_color: last.name_color, name_font: last.name_font };
+      openDMTab(u); setMobileView('lounge');
+    });
   }
 
   const BANNER_REPEATS = 6;
@@ -404,6 +489,55 @@
     for (let i = 0; i < BANNER_REPEATS; i++) el.nextCallContent.appendChild(bannerItem(ev));
   }
 
+  // --- Chat attachments ---
+  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+  function fmtBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  // Images show as a thumbnail; anything else as a link with its size
+  function attachmentEl(msg) {
+    const href = `/api/files/${msg.attachment_id}/${encodeURIComponent(msg.attachment_name || 'file')}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-attachment';
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    const type = String(msg.attachment_type || '').toLowerCase();
+    if (type.startsWith('image/') && type !== 'image/svg+xml') {
+      const img = document.createElement('img');
+      img.src = href; img.alt = msg.attachment_name || 'image'; img.loading = 'lazy';
+      img.className = 'chat-image';
+      a.appendChild(img);
+    } else {
+      a.textContent = `${msg.attachment_name || 'file'} (${fmtBytes(msg.attachment_size || 0)})`;
+    }
+    wrap.appendChild(a);
+    return wrap;
+  }
+
+  function setPendingFile(file) {
+    if (file && file.size > MAX_ATTACHMENT_BYTES) {
+      alert(`That file is ${fmtBytes(file.size)}. Attachments can be up to 10 MB.`);
+      file = null;
+    }
+    state.pendingFile = file || null;
+    const box = document.getElementById('chat-pending');
+    box.hidden = !state.pendingFile;
+    document.getElementById('chat-pending-name').textContent = state.pendingFile
+      ? `Attached: ${state.pendingFile.name} (${fmtBytes(state.pendingFile.size)})`
+      : '';
+  }
+
+  async function uploadPendingFile() {
+    const fd = new FormData();
+    fd.append('file', state.pendingFile, state.pendingFile.name);
+    const d = await api('/api/chat-attachments', { method: 'POST', body: fd });
+    return d.attachment.id;
+  }
+
   // One chat line; your own messages get a × delete button that shows on hover
   function chatLine(msg, d, authorId, onDelete) {
     const line = document.createElement('div');
@@ -415,6 +549,7 @@
     line.appendChild(badge(msg.username, msg.name_color, msg.name_font));
     line.appendChild(document.createTextNode(': '));
     linkify(line, msg.body);
+    if (msg.attachment_id) line.appendChild(attachmentEl(msg));
     if (state.user && authorId === state.user.id) {
       const del = document.createElement('button');
       del.type = 'button';
@@ -434,6 +569,9 @@
   function renderChat(forceBottom = false) {
     const stick = forceBottom || el.chatMessages.scrollHeight - el.chatMessages.scrollTop - el.chatMessages.clientHeight < 60;
     el.chatMessages.innerHTML = '';
+    // Chat is members-only
+    el.chatForm.hidden = !state.user;
+    if (!state.user) { el.chatMessages.innerHTML = '<p class="chat-login"><a href="/login.html">Login to join</a></p>'; return; }
     if (!state.messages.length) { el.chatMessages.innerHTML = '<p>No messages.</p>'; return; }
     let prevDay = '';
     for (const msg of state.messages) {
@@ -875,32 +1013,143 @@
     renderAuthBar(); renderBanner(); renderChatTabs(); renderActiveChat(forceBottom);
     renderFolders(); renderDirectory();
     if (state.activeFolderId) renderFolder();
-    renderCalendar();
+    renderCalendar(); renderGoals();
+  }
+
+  // --- Goals: shared group checklist; the author's name sits at the right of each line ---
+  function renderGoals() {
+    const list = document.getElementById('goals-list');
+    const form = document.getElementById('goal-form');
+    form.hidden = !state.user;
+    list.innerHTML = '';
+    const goals = state.goals || [];
+    if (!goals.length) {
+      list.innerHTML = `<li class="goals-empty">${state.user ? 'No goals yet.' : '<a href="/login.html">Log in</a> to add goals.'}</li>`;
+      return;
+    }
+    for (const g of goals) {
+      const li = document.createElement('li');
+      li.className = 'goal' + (g.done ? ' done' : '');
+      const label = document.createElement('label');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = g.done;
+      box.addEventListener('change', async () => {
+        if (!requireAuth()) { box.checked = g.done; return; }
+        box.disabled = true;
+        try {
+          const d = await api(`/api/goals/${g.id}`, { method: 'PATCH', body: { done: box.checked } });
+          state.goals = d.goals || []; renderGoals();
+        } catch (e) { box.checked = g.done; box.disabled = false; alert(e.message); }
+      });
+      const text = document.createElement('span');
+      text.className = 'goal-text';
+      linkify(text, g.body);
+      label.append(box, text);
+      li.appendChild(label);
+      const who = badge(g.username || 'former member', g.name_color, g.name_font);
+      who.classList.add('goal-user');
+      li.appendChild(who);
+      if (state.user && g.created_by === state.user.id) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'goal-delete';
+        del.textContent = '×';
+        del.title = 'Delete goal';
+        del.setAttribute('aria-label', 'Delete goal');
+        del.addEventListener('click', async () => {
+          try {
+            const d = await api(`/api/goals/${g.id}`, { method: 'DELETE' });
+            state.goals = d.goals || []; renderGoals();
+          } catch (e) { alert(e.message); }
+        });
+        li.appendChild(del);
+      }
+      list.appendChild(li);
+    }
+  }
+
+  function bindGoals() {
+    const form = document.getElementById('goal-form');
+    const input = document.getElementById('goal-input');
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (!requireAuth()) return;
+      const text = input.value.trim();
+      if (!text) return;
+      const btn = form.querySelector('button');
+      btn.disabled = true;
+      try {
+        const d = await api('/api/goals', { method: 'POST', body: { body: text } });
+        input.value = '';
+        state.goals = d.goals || []; renderGoals();
+        const list = document.getElementById('goals-list');
+        list.scrollTop = list.scrollHeight;
+      } catch (err) { alert(err.message); }
+      finally { btn.disabled = false; input.focus(); }
+    });
   }
 
   function bind() {
+    bindGoals();
     ensureEventDefaults();
 
 
     el.chatInput.addEventListener('focus', () => { if (!state.user) window.location.href = '/login.html'; });
+    // Attachments: paperclip picker, or paste a file/image into the message box
+    const fileInput = document.getElementById('chat-file');
+    document.getElementById('chat-attach-btn').addEventListener('click', () => {
+      if (requireAuth()) fileInput.click();
+    });
+    fileInput.addEventListener('change', () => { setPendingFile(fileInput.files[0]); fileInput.value = ''; el.chatInput.focus(); });
+    document.getElementById('chat-pending-remove').addEventListener('click', () => { setPendingFile(null); el.chatInput.focus(); });
+    el.chatInput.addEventListener('paste', e => {
+      const file = e.clipboardData?.files?.[0];
+      if (!file) return; // plain text pastes as usual
+      e.preventDefault();
+      // Pasted screenshots arrive as "image.png"; give them a unique name
+      const named = /^image\.\w+$/.test(file.name)
+        ? new File([file], `pasted-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${file.name.split('.').pop()}`, { type: file.type })
+        : file;
+      setPendingFile(named);
+    });
+
+    // Drag a file or image onto the chat to attach it; a dragged link (e.g. an image from
+    // another site, which browsers hand over as a URL) is added to the message text instead
+    attachDrop(document.getElementById('lounge-pane'), async ({ files, text }) => {
+      if (files.length) {
+        if (files.length > 1) alert('One attachment per message. Attaching the first file.');
+        setPendingFile(files[0]);
+      } else if (/^https?:\/\//i.test(text)) {
+        const url = text.split(/\s+/)[0];
+        el.chatInput.value = el.chatInput.value ? `${el.chatInput.value} ${url}` : url;
+      }
+      el.chatInput.focus();
+    });
+
     el.chatForm.addEventListener('submit', async e => {
       e.preventDefault();
       if (!requireAuth()) return;
       const text = el.chatInput.value.trim();
-      if (!text) return;
+      if (!text && !state.pendingFile) return;
       el.chatSendBtn.disabled = true;
       try {
+        const payload = { body: text };
+        if (state.pendingFile) {
+          el.chatSendBtn.textContent = 'Uploading…';
+          payload.attachment_id = await uploadPendingFile();
+        }
         if (state.activeTab === 'group') {
-          const d = await api('/api/messages', { method:'POST', body: { body: text } });
-          el.chatInput.value = '';
+          const d = await api('/api/messages', { method:'POST', body: payload });
+          el.chatInput.value = ''; setPendingFile(null);
           if (d.message && !state.messages.some(m => m.id === d.message.id)) {
             state.messages.push(d.message); renderChat(true);
           }
         } else {
           // DM
           const userId = state.activeTab;
-          const d = await api(`/api/dm/${userId}`, { method:'POST', body: { body: text } });
-          el.chatInput.value = '';
+          const d = await api(`/api/dm/${userId}`, { method:'POST', body: payload });
+          el.chatInput.value = ''; setPendingFile(null);
           if (d.message) {
             if (!state.dmMessages[userId]) state.dmMessages[userId] = [];
             if (!state.dmMessages[userId].some(m => m.id === d.message.id)) {
@@ -910,7 +1159,7 @@
           }
         }
       } catch (e) { alert(e.message); }
-      finally { el.chatSendBtn.disabled = false; el.chatInput.focus(); }
+      finally { el.chatSendBtn.disabled = false; el.chatSendBtn.textContent = 'Send'; el.chatInput.focus(); }
     });
 
     el.newFolderDetails.addEventListener('toggle', () => {
@@ -1035,6 +1284,7 @@
     state.folders = d.folders||[];
     state.events = d.events||[];
     state.users = d.users||[];
+    state.goals = d.goals||[];
     state.stateToken = d.stateToken||'';
     if (d.timer) window.CoworkingTimer?.set(d.timer);
     renderAll(initial);
@@ -1044,20 +1294,33 @@
     }
   }
 
+  const HIDDEN_POLL_MS = 15000;
+  let lastPollAt = 0;
   async function poll() {
-    if (document.hidden) return;
+    // In a background tab, keep checking (more slowly) only if notifications are on
+    if (document.hidden && (!notifyEnabled() || Date.now() - lastPollAt < HIDDEN_POLL_MS)) return;
+    lastPollAt = Date.now();
     try {
       const last = state.messages.length ? state.messages[state.messages.length-1].id : 0;
-      const d = await api(`/api/poll?after_msg=${last}`);
+      const dmParam = state.user && typeof state.dmMaxId === 'number' ? `&after_dm=${state.dmMaxId}` : '';
+      const d = await api(`/api/poll?after_msg=${last}${dmParam}`);
       if (d.messages?.length) {
-        let added = false;
-        for (const m of d.messages) if (!state.messages.some(x => x.id === m.id)) { state.messages.push(m); added = true; }
-        if (added && state.activeTab === 'group') renderChat(false);
+        const added = [];
+        for (const m of d.messages) if (!state.messages.some(x => x.id === m.id)) { state.messages.push(m); added.push(m); }
+        if (added.length && state.activeTab === 'group') renderChat(false);
+        // last > 0: don't notify for the initial history on first load
+        if (added.length && last > 0) notifyGroup(added);
+      }
+      if (state.user && typeof d.dmMaxId === 'number') {
+        // The first poll only sets a baseline; later polls report new DMs
+        if (typeof state.dmMaxId === 'number' && d.dms?.length) notifyDMs(d.dms);
+        state.dmMaxId = Math.max(state.dmMaxId || 0, d.dmMaxId);
       }
       if (d.stateToken && d.stateToken !== state.stateToken) {
         state.stateToken = d.stateToken;
-        const [fr, er, ur, mr, tr] = await Promise.all([api('/api/folders'), api('/api/events'), api('/api/users'), api('/api/messages'), api('/api/timer')]);
+        const [fr, er, ur, mr, tr, gr] = await Promise.all([api('/api/folders'), api('/api/events'), api('/api/users'), state.user ? api('/api/messages') : { messages: [] }, api('/api/timer'), api('/api/goals')]);
         state.folders = fr.folders||[]; state.events = er.events||[]; state.users = ur.users||[];
+        state.goals = gr.goals||[]; renderGoals();
         if (tr.timer) window.CoworkingTimer?.set(tr.timer);
         // Full reload catches messages deleted by others
         if (mr.messages) { state.messages = mr.messages; if (state.activeTab === 'group') renderChat(false); }
@@ -1070,23 +1333,91 @@
     } catch {}
   }
 
-  // NTS radio: one shared audio element, only one channel plays at a time
+  // NTS radio + infinite mixtapes: one audio element, only one stream plays at a time
+  const NTS_MIXTAPES = [
+    ['Poolside', 'mixtape4'], ['Slow Focus', 'mixtape'], ['Low Key', 'mixtape2'],
+    ['Memory Lane', 'mixtape6'], ['4 To The Floor', 'mixtape5'], ['Island Time', 'mixtape21'],
+    ['The Tube', 'mixtape26'], ['Sheet Music', 'mixtape35'], ['Feelings', 'mixtape27'],
+    ['Expansions', 'mixtape3'], ['Rap House', 'mixtape22'], ['Labyrinth', 'mixtape31'],
+    ['Sweat', 'mixtape24'], ['Otaku', 'mixtape36'], ['The Pit', 'mixtape34'],
+    ['Field Recordings', 'mixtape23']
+  ].map(([title, path]) => ({ title, src: `https://stream-mixtape-geo.ntslive.net/${path}` }));
+
+  const ICON_PLAY = '<svg class="radio-icon" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0 L10 5 L1 10 Z" fill="currentColor"/></svg>';
+  const ICON_STOP = '<svg class="radio-icon" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="currentColor"/></svg>';
+
   function bindRadio() {
     const audio = new Audio();
     const btns = document.querySelectorAll('.radio-btn');
-    const label = (b, playing) => {
-      const n = b.textContent.trim().charAt(0);
-      b.textContent = `${n} ${playing ? '\u25A0' : '\u25B6'}`;
-      b.setAttribute('aria-label', `${playing ? 'Stop' : 'Play'} NTS ${n}`);
+    btns.forEach(b => { b.dataset.n = b.textContent.trim().charAt(0); });
+    const mixBtn = document.getElementById('mixtape-btn');
+    const mixMenu = document.getElementById('mixtape-menu');
+    const volBtn = document.getElementById('volume-btn');
+    const volPop = document.getElementById('volume-pop');
+    const volRange = document.getElementById('volume-range');
+    const volValue = document.getElementById('volume-value');
+
+    // Volume is a per-listener preference, so it stays in this browser
+    let vol = 80;
+    try { const v = parseInt(localStorage.getItem('coworking.volume'), 10); if (v >= 0 && v <= 100) vol = v; } catch {}
+    const setVol = (v) => {
+      vol = v; audio.volume = v / 100; volRange.value = v; volValue.textContent = v;
+      try { localStorage.setItem('coworking.volume', String(v)); } catch {}
     };
-    btns.forEach(b => b.addEventListener('click', () => {
-      const playingThis = !audio.paused && audio.dataset.src === b.dataset.src;
+    setVol(vol);
+    volRange.addEventListener('input', () => setVol(parseInt(volRange.value, 10)));
+
+    // Mixtape menu items
+    mixMenu.innerHTML = '';
+    for (const m of NTS_MIXTAPES) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'mixtape-item'; b.dataset.src = m.src; b.textContent = m.title;
+      li.appendChild(b); mixMenu.appendChild(li);
+    }
+    const items = mixMenu.querySelectorAll('.mixtape-item');
+
+    const render = () => {
+      const cur = !audio.paused && audio.dataset.src ? audio.dataset.src : '';
+      btns.forEach(b => {
+        const n = b.dataset.n;
+        const on = cur === b.dataset.src;
+        b.innerHTML = `${n} ${on ? ICON_STOP : ICON_PLAY}`;
+        b.setAttribute('aria-label', `${on ? 'Stop' : 'Play'} NTS ${n}`);
+      });
+      // While a mixtape plays, the button shows its name plus a stop icon that stops it directly
+      const mix = NTS_MIXTAPES.find(m => m.src === cur);
+      mixBtn.innerHTML = mix
+        ? `<span class="mix-name">${mix.title}</span> <span class="mix-stop" title="Stop">${ICON_STOP}</span>`
+        : 'Mixtapes \u25BE';
+      mixBtn.setAttribute('aria-label', mix ? `${mix.title} playing. Open mixtapes` : 'Mixtapes');
+      items.forEach(i => i.classList.toggle('active', i.dataset.src === cur));
+    };
+
+    const toggle = (src) => {
+      const playingThis = !audio.paused && audio.dataset.src === src;
       audio.pause();
-      btns.forEach(x => label(x, false));
-      if (playingThis) { audio.removeAttribute('src'); audio.load(); return; }
-      audio.src = b.dataset.src; audio.dataset.src = b.dataset.src;
-      audio.play().then(() => label(b, true)).catch(() => {});
+      if (playingThis) { audio.removeAttribute('src'); delete audio.dataset.src; audio.load(); render(); return; }
+      audio.src = src; audio.dataset.src = src; audio.volume = vol / 100;
+      render();
+      audio.play().then(render).catch(render);
+    };
+
+    btns.forEach(b => b.addEventListener('click', () => toggle(b.dataset.src)));
+    items.forEach(i => i.addEventListener('click', () => { toggle(i.dataset.src); closePops(); }));
+
+    const pops = [[mixBtn, mixMenu], [volBtn, volPop]];
+    const closePops = () => pops.forEach(([b, p]) => { p.hidden = true; b.setAttribute('aria-expanded', 'false'); });
+    pops.forEach(([b, p]) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (b === mixBtn && e.target.closest('.mix-stop')) { toggle(audio.dataset.src); closePops(); return; }
+      const open = p.hidden;
+      closePops();
+      p.hidden = !open; b.setAttribute('aria-expanded', String(open));
     }));
+    document.addEventListener('click', (e) => { if (!e.target.closest('.radio-pop')) closePops(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePops(); });
+    render();
   }
 
   // --- Presence: heartbeat every 30s; "away" when the tab is hidden or idle for 5 min ---

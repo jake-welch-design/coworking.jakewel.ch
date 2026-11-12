@@ -18,5 +18,9 @@ binding = "DB"
 database_name = "coworking-db"
 database_id = "3d37f932-c9ae-436c-af14-570e004e5ff3"
 
+# Daily at 04:00 UTC: delete chat messages, DMs and attachments older than 30 days
+[triggers]
+crons = ["0 4 * * *"]
+
 [vars]
 ARENA_CHANNEL_STATUS = "private"

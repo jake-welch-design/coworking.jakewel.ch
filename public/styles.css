@@ -152,12 +152,14 @@ select {
   text-transform: lowercase;
 }
 
-#allow-emails-label {
+#allow-emails-label,
+#notify-label {
   cursor: pointer;
   white-space: nowrap;
 }
 
-#allow-emails-label input {
+#allow-emails-label input,
+#notify-label input {
   vertical-align: middle;
   margin: 0 2px 0 0;
 }
@@ -335,6 +337,87 @@ body.is-moving * {
   border: solid 1px white;
 }
 
+/* Mixtape dropdown + volume popup, anchored under their buttons on the right */
+.radio-pop {
+  position: relative;
+}
+
+.radio-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #000000;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+.radio-menu[hidden] {
+  display: none;
+}
+
+#mixtape-menu {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  min-width: 160px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+#mixtape-menu li {
+  margin: 0;
+}
+
+button.mixtape-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  white-space: nowrap;
+}
+
+button.mixtape-item,
+button.mixtape-item:hover,
+button.mixtape-item:active {
+  border: none;
+  box-shadow: none;
+  padding: 3px 10px;
+}
+
+button.mixtape-item:hover,
+button.mixtape-item:focus-visible {
+  background: #f6f9fe;
+}
+
+button.mixtape-item.active {
+  font-weight: bold;
+}
+
+button.mixtape-item.active::after {
+  content: " \25A0";
+}
+
+#volume-pop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+#volume-range {
+  width: 120px;
+  margin: 0;
+}
+
+#volume-value {
+  font-family: ui-monospace, Menlo, monospace;
+  min-width: 3ch;
+  text-align: right;
+}
+
 /* Chat tabs — tab strip style */
 #chat-tabs {
   display: flex;
@@ -412,6 +495,56 @@ body.is-moving * {
   flex: 1;
 }
 
+/* Paperclip: small, unstyled-looking like Send but icon-only */
+#chat-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+}
+
+#chat-attach-btn:active {
+  padding: 4px 5px 2px 7px;
+}
+
+/* File waiting to be sent, shown just above the message box */
+#chat-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: smaller;
+  min-width: 0;
+}
+
+#chat-pending-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+#chat-pending-remove {
+  flex: none;
+  padding: 0 6px;
+  line-height: 1.3;
+}
+
+#chat-pending-remove:active {
+  padding: 1px 5px 0 7px;
+}
+
+.chat-attachment {
+  margin: 2px 0 4px;
+}
+
+.chat-image {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 220px;
+  border: 1px solid #000000;
+}
+
 #block-input,
 #block-title-input,
 #folder-title-input,
@@ -423,6 +556,11 @@ body.is-moving * {
 
 .drag-over {
   outline: 2px dashed #000000;
+}
+
+/* Lounge: dashed outline sits inside the pane so its drop shadow and title bar aren't covered */
+#lounge-pane.drag-over {
+  outline-offset: -4px;
 }
 
 .block-thumb {
@@ -663,9 +801,14 @@ body.timer-alarm .pane {
 
 .user-more-btn {
   margin-left: auto;
-  padding: 0 6px;
-  line-height: 1.4;
-  letter-spacing: 1px;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.user-more-btn:active {
+  padding: 1px 3px 0 5px;
 }
 
 .user-menu {
@@ -864,4 +1007,147 @@ summary.bevel-btn::-webkit-details-marker {
     flex: none;
     height: 50vh;
   }
+}
+
+/* Keep a long mixtape name from pushing the Lounge header wider */
+#mixtape-btn {
+  max-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+#mixtape-btn .mix-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Same size as the channel buttons' icons; clicking it stops the mixtape */
+#mixtape-btn .mix-stop {
+  display: inline-flex;
+  flex: none;
+}
+
+/* Play / stop / volume icons share one size */
+.radio-icon {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  vertical-align: -0.05em;
+}
+
+.radio-icon.volume-icon {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+}
+
+/* Logged-out visitors see this instead of the chat */
+.chat-login {
+  height: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Goals: shared checklist, list scrolls and the add field stays at the bottom */
+#goals-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+#goals-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.goal {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid #eef1f6;
+}
+
+.goal label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.goal input[type="checkbox"] {
+  margin: 2px 0 0;
+  flex: none;
+}
+
+.goal-text {
+  overflow-wrap: anywhere;
+}
+
+.goal.done .goal-text {
+  text-decoration: line-through;
+  color: #777777;
+}
+
+.goal-user {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: smaller;
+}
+
+button.goal-delete {
+  flex: none;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0 2px;
+  line-height: 1.2;
+  visibility: hidden;
+}
+
+.goal:hover button.goal-delete,
+button.goal-delete:focus-visible {
+  visibility: visible;
+}
+
+button.goal-delete:hover,
+button.goal-delete:active {
+  border: none;
+  box-shadow: none;
+  padding: 0 2px;
+}
+
+@media (hover: none) {
+  button.goal-delete {
+    visibility: visible;
+  }
+}
+
+.goals-empty {
+  color: #555555;
+}
+
+#goal-form {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  flex: none;
+}
+
+#goal-input {
+  flex: 1;
+  min-width: 0;
 }
