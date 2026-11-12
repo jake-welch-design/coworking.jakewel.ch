@@ -298,7 +298,14 @@ function makeSessionCookie(token, maxAgeSeconds, isSecure) {
   return parts.join('; ');
 }
 
-async function getCurrentUser(request, db) {
+// Looked up once per request: the login gate and the route handlers both ask
+const currentUserCache = new WeakMap();
+function getCurrentUser(request, db) {
+  if (!currentUserCache.has(request)) currentUserCache.set(request, lookupCurrentUser(request, db));
+  return currentUserCache.get(request);
+}
+
+async function lookupCurrentUser(request, db) {
   const cookies = parseCookies(request.headers.get('Cookie'));
   let rawToken = cookies[SESSION_COOKIE];
   if (!rawToken) {
@@ -1141,12 +1148,26 @@ export default {
         return await serveUploadedFile(fileId, env.DB, env, request);
       }
 
+      // Members only: everything below needs a session, except logging in/out, signing up,
+      // resetting a password, and bootstrap (which tells logged-out visitors to go log in)
+      const PUBLIC_API = ['/api/bootstrap', '/api/auth/login', '/api/auth/signup', '/api/auth/reset', '/api/auth/logout'];
+      if (!PUBLIC_API.includes(pathname) && !(await getCurrentUser(request, env.DB))) {
+        return errorResponse('Authentication required.', 401);
+      }
+
       // 2. Bootstrap Endpoint
       if (method === 'GET' && pathname === '/api/bootstrap') {
         const user = await getCurrentUser(request, env.DB);
+        const config = {
+          arenaConfigured: Boolean(arenaToken(env)),
+          passcodeRequired: Boolean(env.SIGNUP_PASSCODE),
+          allowedFonts: ALLOWED_FONTS
+        };
+        // Logged out: just the config (the signup page reads it); the app sends them to log in
+        if (!user) return jsonResponse({ user: null, config });
         // Chat is members-only: logged-out visitors get no messages
         const [messages, folders, events, stateToken, users, timer, goals] = await Promise.all([
-          user ? fetchMessages(env.DB, 0, 150) : [],
+          fetchMessages(env.DB, 0, 150),
           fetchFolders(env.DB),
           fetchEvents(env.DB),
           computeStateToken(env.DB),
@@ -1157,11 +1178,7 @@ export default {
         return jsonResponse({
           user,
           users,
-          config: {
-            arenaConfigured: Boolean(arenaToken(env)),
-            passcodeRequired: Boolean(env.SIGNUP_PASSCODE),
-            allowedFonts: ALLOWED_FONTS
-          },
+          config,
           messages,
           folders,
           events,
@@ -1343,7 +1360,7 @@ export default {
         });
       }
 
-      // 7a. Goals: shared checklist. Anyone can view; members add and tick; you delete your own.
+      // 7a. Goals: shared checklist. Members add and tick; you edit and delete your own.
       if (pathname === '/api/goals') {
         if (method === 'GET') return jsonResponse({ goals: await fetchGoals(env.DB) });
         if (method === 'POST') {

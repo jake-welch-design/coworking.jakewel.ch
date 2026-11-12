@@ -1159,6 +1159,16 @@ textarea.goal-edit {
   font-size: smaller;
 }
 
+/* Your own goals: a × after the name, shown on hover (styled like the chat ×) */
+button.goal-delete {
+  position: static;
+  flex: none;
+}
+
+.goal:hover button.goal-delete {
+  visibility: visible;
+}
+
 .goals-complete-heading {
   margin: 12px 0 4px;
   font-size: smaller;
