@@ -44,6 +44,11 @@
   // Alarm sound: plays once when the timer reaches zero (not on page load if it already had)
   const alarm = new Audio('/sounds/timer-done.mp3');
   alarm.preload = 'auto';
+  // Mute NTS while the alarm plays, then bring it back
+  const muteRadio = (m) => window.CoworkingRadio && window.CoworkingRadio.setMuted(m);
+  alarm.addEventListener('play', () => muteRadio(true));
+  alarm.addEventListener('pause', () => muteRadio(false));
+  alarm.addEventListener('ended', () => muteRadio(false));
   let lastStatus = null;
   function updateSound() {
     if (t.status === 'done' && lastStatus !== null && lastStatus !== 'done') {

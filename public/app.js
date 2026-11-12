@@ -1699,6 +1699,8 @@
     }));
     document.addEventListener('click', (e) => { if (!e.target.closest('.radio-pop')) closePops(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePops(); });
+    // The timer's alarm mutes the radio while it plays (timer.js calls this)
+    window.CoworkingRadio = { setMuted: (m) => { audio.muted = !!m; } };
     render();
   }
 
