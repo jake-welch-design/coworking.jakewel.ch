@@ -1307,10 +1307,24 @@ export default {
         const goalId = parseInt(goalMatch[1], 10);
         if (method === 'PATCH') {
           const body = await request.json().catch(() => ({}));
-          const res = await env.DB
-            .prepare(`UPDATE goals SET done = ?, updated_at = ? WHERE id = ?`)
-            .bind(body.done ? 1 : 0, new Date().toISOString(), goalId)
-            .run();
+          const nowIso = new Date().toISOString();
+          let res;
+          if (typeof body.body === 'string') {
+            // Editing the text: author only
+            const text = body.body.trim();
+            if (!text) return errorResponse('Empty goal.');
+            if (text.length > 280) return errorResponse('Goals can be up to 280 characters.');
+            res = await env.DB
+              .prepare(`UPDATE goals SET body = ?, updated_at = ? WHERE id = ? AND created_by = ?`)
+              .bind(text, nowIso, goalId, user.id)
+              .run();
+          } else {
+            // Ticking: any member
+            res = await env.DB
+              .prepare(`UPDATE goals SET done = ?, updated_at = ? WHERE id = ?`)
+              .bind(body.done ? 1 : 0, nowIso, goalId)
+              .run();
+          }
           if (!res.meta?.changes) return errorResponse('Goal not found.', 404);
         } else {
           const res = await env.DB

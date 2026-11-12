@@ -70,7 +70,6 @@
     calPrevLink: document.getElementById('cal-prev-link'),
     calNextLink: document.getElementById('cal-next-link'),
     calTodayLink: document.getElementById('cal-today-link'),
-    calMonthLabel: document.getElementById('cal-month-label'),
     calAscii: document.getElementById('calendar-ascii'),
     eventsListHeading: document.getElementById('events-list-heading'),
     clearDateFilterLink: document.getElementById('clear-date-filter-link'),
@@ -951,7 +950,6 @@
 
   function renderCalendar() {
     const first = new Date(state.calYear, state.calMonth, 1);
-    el.calMonthLabel.textContent = first.toLocaleDateString([], { month:'long', year:'numeric' });
     const evByDate = new Map();
     for (const ev of state.events) { const k = dateKey(new Date(ev.starts_at)); evByDate.set(k, (evByDate.get(k)||0)+1); }
     const startDow = first.getDay(), dim = new Date(state.calYear, state.calMonth+1, 0).getDate();
@@ -1016,82 +1014,140 @@
     renderCalendar(); renderGoals();
   }
 
-  // --- Goals: shared group checklist; the author's name sits at the right of each line ---
+  // --- Goals: shared checklist of editable rows ---
+  // Open goals on top, then blank rows to type new ones; ticking a goal moves it to "Complete" at the bottom.
+  // Each row shows who added it on the right. You can edit or clear (delete) your own goals.
+  let goalsRenderPending = false;
+
   function renderGoals() {
     const list = document.getElementById('goals-list');
-    const form = document.getElementById('goal-form');
-    form.hidden = !state.user;
+    // Don't rebuild under someone who's typing; catch up when they leave the field
+    const active = document.activeElement;
+    if (list.contains(active) && active.classList.contains('goal-input') && !active.readOnly) {
+      goalsRenderPending = true; return;
+    }
+    goalsRenderPending = false;
     list.innerHTML = '';
     const goals = state.goals || [];
-    if (!goals.length) {
-      list.innerHTML = `<li class="goals-empty">${state.user ? 'No goals yet.' : '<a href="/login.html">Log in</a> to add goals.'}</li>`;
-      return;
+    const open = goals.filter(g => !g.done);
+    const done = goals.filter(g => g.done);
+
+    if (!state.user) {
+      const p = document.createElement('p');
+      p.className = 'goals-login';
+      p.innerHTML = '<a href="/login.html">Log in</a> to add goals.';
+      list.appendChild(p);
     }
-    for (const g of goals) {
-      const li = document.createElement('li');
-      li.className = 'goal' + (g.done ? ' done' : '');
-      const label = document.createElement('label');
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = g.done;
-      box.addEventListener('change', async () => {
-        if (!requireAuth()) { box.checked = g.done; return; }
-        box.disabled = true;
-        try {
-          const d = await api(`/api/goals/${g.id}`, { method: 'PATCH', body: { done: box.checked } });
-          state.goals = d.goals || []; renderGoals();
-        } catch (e) { box.checked = g.done; box.disabled = false; alert(e.message); }
-      });
-      const text = document.createElement('span');
-      text.className = 'goal-text';
-      linkify(text, g.body);
-      label.append(box, text);
-      li.appendChild(label);
+
+    const ul = document.createElement('ul');
+    ul.className = 'goal-group';
+    for (const g of open) ul.appendChild(goalRow(g));
+    if (state.user) ul.appendChild(goalRow(null));
+    list.appendChild(ul);
+
+    if (done.length) {
+      const h = document.createElement('p');
+      h.className = 'goals-complete-heading';
+      h.textContent = 'Complete';
+      list.appendChild(h);
+      const dl = document.createElement('ul');
+      dl.className = 'goal-group';
+      for (const g of done) dl.appendChild(goalRow(g));
+      list.appendChild(dl);
+    }
+    if (state.user) fillGoalRows(ul);
+  }
+
+  // Add blank rows until the pane's visible area is full (Complete stays in view below them)
+  function fillGoalRows(ul) {
+    const list = document.getElementById('goals-list');
+    const row = ul.lastElementChild;
+    const rowH = row?.getBoundingClientRect().height || 0;
+    if (!rowH || !list.clientHeight) return;
+    const free = list.clientHeight - list.scrollHeight;
+    const extra = Math.floor(free / rowH);
+    for (let i = 0; i < extra; i++) ul.appendChild(goalRow(null));
+  }
+
+  // Refill when the pane is resized (dragging gutters, window resize)
+  let goalsResizeTimer = null;
+  new ResizeObserver(() => {
+    clearTimeout(goalsResizeTimer);
+    goalsResizeTimer = setTimeout(() => { if (state.user) renderGoals(); }, 100);
+  }).observe(document.getElementById('goals-list'));
+
+  async function goalRequest(path, method, body) {
+    try {
+      const d = await api(path, { method, body });
+      state.goals = d.goals || [];
+    } catch (e) { alert(e.message); }
+    renderGoals();
+  }
+
+  function goalRow(g) {
+    const li = document.createElement('li');
+    li.className = 'goal' + (g?.done ? ' done' : '');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = Boolean(g?.done);
+    box.disabled = !g || !state.user;
+    box.setAttribute('aria-label', g ? `Mark "${g.body}" ${g.done ? 'not done' : 'done'}` : 'New goal');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'goal-input';
+    input.maxLength = 280;
+    input.value = g ? g.body : '';
+    if (!g) input.classList.add('goal-blank');
+    input.setAttribute('aria-label', g ? 'Goal' : 'New goal');
+    const mine = g && state.user && g.created_by === state.user.id;
+    input.readOnly = g ? !mine || g.done : !state.user;
+    li.append(box, input);
+
+    if (g) {
       const who = badge(g.username || 'former member', g.name_color, g.name_font);
       who.classList.add('goal-user');
       li.appendChild(who);
-      if (state.user && g.created_by === state.user.id) {
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'goal-delete';
-        del.textContent = '×';
-        del.title = 'Delete goal';
-        del.setAttribute('aria-label', 'Delete goal');
-        del.addEventListener('click', async () => {
-          try {
-            const d = await api(`/api/goals/${g.id}`, { method: 'DELETE' });
-            state.goals = d.goals || []; renderGoals();
-          } catch (e) { alert(e.message); }
-        });
-        li.appendChild(del);
-      }
-      list.appendChild(li);
+      box.addEventListener('change', () => {
+        if (!requireAuth()) { box.checked = g.done; return; }
+        box.disabled = true;
+        goalRequest(`/api/goals/${g.id}`, 'PATCH', { done: box.checked });
+      });
     }
-  }
 
-  function bindGoals() {
-    const form = document.getElementById('goal-form');
-    const input = document.getElementById('goal-input');
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      if (!requireAuth()) return;
+    let committed = false;
+    const commit = (keepFocus) => {
+      if (committed) return;
       const text = input.value.trim();
-      if (!text) return;
-      const btn = form.querySelector('button');
-      btn.disabled = true;
-      try {
-        const d = await api('/api/goals', { method: 'POST', body: { body: text } });
-        input.value = '';
-        state.goals = d.goals || []; renderGoals();
-        const list = document.getElementById('goals-list');
-        list.scrollTop = list.scrollHeight;
-      } catch (err) { alert(err.message); }
-      finally { btn.disabled = false; input.focus(); }
+      if (!g) {
+        if (!text) return;
+        committed = true; input.readOnly = true;
+        goalRequest('/api/goals', 'POST', { body: text }).then(() => {
+          // Keep typing: jump to the next blank row
+          if (keepFocus) document.querySelector('#goals-list .goal-blank')?.focus();
+        });
+      } else if (mine && !g.done && text !== g.body) {
+        committed = true; input.readOnly = true;
+        if (!text) {
+          if (!confirm('Delete this goal?')) { input.value = g.body; committed = false; input.readOnly = false; return; }
+          goalRequest(`/api/goals/${g.id}`, 'DELETE');
+        } else {
+          goalRequest(`/api/goals/${g.id}`, 'PATCH', { body: text });
+        }
+      }
+    };
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+      if (e.key === 'Escape') { input.value = g ? g.body : ''; input.blur(); }
     });
+    input.addEventListener('blur', () => {
+      commit(false);
+      if (goalsRenderPending) setTimeout(renderGoals, 0);
+    });
+    if (!g) input.addEventListener('focus', () => { if (!state.user) requireAuth(); });
+    return li;
   }
 
   function bind() {
-    bindGoals();
     ensureEventDefaults();
 
 

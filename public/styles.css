@@ -616,9 +616,10 @@ legend {
   overflow: visible;
 }
 
-/* Tighter bullet indent in the Resources pane */
+/* Tighter bullet indent in the Resources and Calendar panes */
 #folders-list,
-#blocks-list {
+#blocks-list,
+#events-list {
   padding-left: 18px;
 }
 
@@ -965,18 +966,8 @@ summary.bevel-btn::-webkit-details-marker {
   margin-bottom: 6px;
 }
 
-#cal-today-row {
-  text-align: center;
-  margin: 0 0 4px;
-}
-
 #schedule-call-row {
   margin: 0 0 8px;
-  text-align: center;
-}
-
-#cal-month-label {
-  min-width: 0;
   text-align: center;
 }
 
@@ -1053,101 +1044,103 @@ summary.bevel-btn::-webkit-details-marker {
   justify-content: center;
 }
 
-/* Goals: shared checklist, list scrolls and the add field stays at the bottom */
+/* Goals: shared checklist of editable rows; completed goals drop to the bottom */
 #goals-pane {
   display: flex;
   flex-direction: column;
 }
 
 #goals-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
 
-.goal {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 3px 0;
-  border-bottom: 1px solid #eef1f6;
+.goal-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.goal label {
-  flex: 1;
-  min-width: 0;
+.goal {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  cursor: pointer;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
 }
 
 .goal input[type="checkbox"] {
-  margin: 2px 0 0;
+  margin: 0;
   flex: none;
 }
 
-.goal-text {
-  overflow-wrap: anywhere;
+.goal input.goal-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
 }
 
-.goal.done .goal-text {
+.goal.done input.goal-input {
   text-decoration: line-through;
   color: #777777;
 }
 
 .goal-user {
   flex: none;
-  max-width: 45%;
+  max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: smaller;
 }
 
-button.goal-delete {
-  flex: none;
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0 2px;
-  line-height: 1.2;
-  visibility: hidden;
+.goals-complete-heading {
+  margin: 12px 0 4px;
+  font-size: smaller;
+  font-weight: bold;
 }
 
-.goal:hover button.goal-delete,
-button.goal-delete:focus-visible {
-  visibility: visible;
-}
-
-button.goal-delete:hover,
-button.goal-delete:active {
-  border: none;
-  box-shadow: none;
-  padding: 0 2px;
-}
-
-@media (hover: none) {
-  button.goal-delete {
-    visibility: visible;
-  }
-}
-
-.goals-empty {
+.goals-login {
   color: #555555;
+  margin: 0 0 8px;
 }
 
-#goal-form {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
+/* Checkboxes: square corners, a firmer black border, and a crisp check mark */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
   flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0 3px 0 0;
+  border: 1.5px solid #000000;
+  border-radius: 0;
+  background: #ffffff;
+  vertical-align: middle;
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
 }
 
-#goal-input {
-  flex: 1;
-  min-width: 0;
+input[type="checkbox"]::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  clip-path: polygon(14% 44%, 0 59%, 40% 100%, 100% 22%, 86% 8%, 39% 70%);
+  background: #000000;
+  transform: scale(0);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid #3b6fd8;
+  outline-offset: 1px;
+}
+
+input[type="checkbox"]:disabled {
+  border-color: #999999;
+  cursor: default;
 }

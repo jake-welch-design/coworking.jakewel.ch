@@ -119,13 +119,10 @@
             >
               &larr;
             </button>
-            <strong id="cal-month-label"></strong>
+            <button type="button" id="cal-today-link">Today</button>
             <button type="button" id="cal-next-link" aria-label="Next month">
               &rarr;
             </button>
-          </p>
-          <p id="cal-today-row">
-            <button type="button" id="cal-today-link">Today</button>
           </p>
 
           <pre id="calendar-ascii" aria-label="Calendar"></pre>
@@ -334,17 +331,7 @@
 
       <section id="goals-pane" class="pane" data-pane="goals">
         <h2 class="pane-title">Goals</h2>
-        <ul id="goals-list"></ul>
-        <form id="goal-form">
-          <input
-            type="text"
-            id="goal-input"
-            placeholder="Add a goal"
-            maxlength="280"
-            aria-label="New goal"
-          />
-          <button type="submit">Add</button>
-        </form>
+        <div id="goals-list"></div>
       </section>
     </main>
 
