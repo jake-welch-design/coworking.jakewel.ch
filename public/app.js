@@ -447,9 +447,15 @@
     });
   }
 
-  const BANNER_REPEATS = 6;
 
-  // Builds one copy of the banner text; repeated so the marquee reads as a continuous loop
+  // Rebuild the banner loop after the window is resized so it still spans the screen
+  let bannerResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(bannerResizeTimer);
+    bannerResizeTimer = setTimeout(renderBanner, 200);
+  });
+
+  // Builds one copy of the banner text; repeated to make a continuous loop
   function bannerItem(ev) {
     const item = document.createElement('span');
     item.className = 'banner-item';
@@ -484,8 +490,27 @@
 
   function renderBanner() {
     const ev = nextEvent();
-    el.nextCallContent.innerHTML = '';
-    for (let i = 0; i < BANNER_REPEATS; i++) el.nextCallContent.appendChild(bannerItem(ev));
+    // Seamless loop: the track holds two identical halves and scrolls left by exactly one half,
+    // so the end joins the start with no gap. Each half repeats the item enough to span the screen.
+    const sample = bannerItem(ev);
+    const track = el.nextCallContent;
+    const sig = `${sample.outerHTML}|${window.innerWidth}`;
+    if (track.dataset.sig === sig) return; // unchanged: leave the animation running smoothly
+    track.dataset.sig = sig;
+    track.innerHTML = '';
+    const half = document.createElement('div');
+    half.className = 'banner-half';
+    half.appendChild(sample);
+    track.appendChild(half);
+    const itemW = sample.getBoundingClientRect().width || 300;
+    const copies = Math.max(1, Math.ceil(window.innerWidth / itemW));
+    for (let i = 1; i < copies; i++) half.appendChild(bannerItem(ev));
+    const second = half.cloneNode(true);
+    second.setAttribute('aria-hidden', 'true');
+    track.appendChild(second);
+    // Constant speed (~60px/s) whatever the text length
+    const halfW = half.getBoundingClientRect().width;
+    track.style.animationDuration = `${Math.max(5, halfW / 60)}s`;
   }
 
   // --- Chat attachments ---
@@ -718,8 +743,81 @@
     return a;
   }
 
+  // Rename form for a folder you made (also renames its Are.na channel)
+  function folderEditForm(f) {
+    const form = document.createElement('form');
+    form.className = 'block-edit';
+    const label = document.createElement('label');
+    label.textContent = 'Folder name';
+    const input = document.createElement('input');
+    input.type = 'text'; input.maxLength = 100; input.value = f.title;
+    const row = document.createElement('p');
+    row.className = 'block-edit-actions';
+    const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Save';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
+    row.append(save, cancel);
+    form.append(label, input, row);
+    cancel.addEventListener('click', () => { state.editingFolderId = null; renderFolder(); });
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') cancel.click(); });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      save.disabled = true; save.textContent = 'Saving…';
+      try {
+        const d = await api(`/api/folders/${f.id}`, { method: 'PATCH', body: { title: input.value } });
+        state.folders = d.folders || state.folders;
+        state.editingFolderId = null;
+        renderFolders(); renderFolder();
+      } catch (err) { alert(err.message); save.disabled = false; save.textContent = 'Save'; }
+    });
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+    return form;
+  }
+
+  // Inline edit form for a block you shared: title, text (text blocks) and note
+  function blockEditForm(b) {
+    const form = document.createElement('form');
+    form.className = 'block-edit';
+    const field = (labelText, el) => {
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      form.append(label, el);
+      return el;
+    };
+    const title = field('Title', document.createElement('input'));
+    title.type = 'text'; title.maxLength = 300; title.value = b.title || '';
+    let content = null;
+    if (b.block_type === 'text') {
+      content = field('Text', document.createElement('textarea'));
+      content.rows = 4; content.value = b.content || '';
+    }
+    const note = field('Note (optional)', document.createElement('textarea'));
+    note.rows = 2; note.maxLength = 2000; note.value = b.note || '';
+    const row = document.createElement('p');
+    row.className = 'block-edit-actions';
+    const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Save';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
+    row.append(save, cancel);
+    form.appendChild(row);
+    cancel.addEventListener('click', () => { state.editingBlockId = null; renderFolder(); });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      save.disabled = true; save.textContent = 'Saving…';
+      try {
+        const body = { title: title.value, note: note.value };
+        if (content) body.content = content.value;
+        const d = await api(`/api/blocks/${b.id}`, { method: 'PATCH', body });
+        state.activeFolderBlocks = d.blocks || state.activeFolderBlocks;
+        state.editingBlockId = null;
+        renderFolder();
+      } catch (err) { alert(err.message); save.disabled = false; save.textContent = 'Save'; }
+    });
+    setTimeout(() => title.focus(), 0);
+    return form;
+  }
+
   function blockLI(b) {
     const li = document.createElement('li');
+    if (state.editingBlockId === b.id) { li.appendChild(blockEditForm(b)); return li; }
     const href = blockHref(b);
     if (b.image_url) {
       const a = newTabLink(href || b.image_url);
@@ -752,6 +850,10 @@
     if (b.creator_username) sm.appendChild(badge(b.creator_username, b.creator_color, b.creator_font));
     else if (b.arena_author) sm.appendChild(document.createTextNode(b.arena_author));
     const af = state.folders.find(f => f.id === state.activeFolderId);
+    if (state.user && b.created_by === state.user.id) {
+      if (sm.childNodes.length) sm.appendChild(document.createTextNode(' · '));
+      sm.appendChild(actionLink('Edit', () => { state.editingBlockId = b.id; renderFolder(); }));
+    }
     if (state.user && (b.created_by === state.user.id || (af && af.created_by === state.user.id))) {
       if (sm.childNodes.length) sm.appendChild(document.createTextNode(' · '));
       sm.appendChild(actionLink('Delete', async () => {
@@ -784,6 +886,8 @@
     }
     if (state.user && f.created_by === state.user.id) {
       if (sm.childNodes.length) sm.appendChild(document.createTextNode(' · '));
+      sm.appendChild(actionLink('Edit folder', () => { state.editingFolderId = f.id; renderFolder(); }));
+      sm.appendChild(document.createTextNode(' · '));
       sm.appendChild(actionLink('Delete folder', async () => {
         if (!confirm(`Delete "${f.title}"?`)) return;
         const d = await api(`/api/folders/${f.id}`, { method:'DELETE' });
@@ -792,6 +896,7 @@
       }));
     }
     p.appendChild(sm); el.activeFolderMeta.appendChild(p);
+    if (state.editingFolderId === f.id) el.activeFolderMeta.appendChild(folderEditForm(f));
     el.blocksList.innerHTML = '';
     if (!state.activeFolderBlocks.length) { el.blocksList.innerHTML = '<li>No blocks.</li>'; return; }
     for (const b of state.activeFolderBlocks) el.blocksList.appendChild(blockLI(b));
@@ -809,6 +914,8 @@
 
   async function openFolder(id, sync = false) {
     state.activeFolderId = id;
+    state.editingBlockId = null;
+    state.editingFolderId = null;
     el.blockFormError.hidden = true;
     setAddBlockOpen(false);
     renderFolder();
@@ -1383,7 +1490,8 @@
         renderFolders(); renderCalendar(); renderBanner(); renderDirectory();
         if (state.activeFolderId) {
           const ad = await api(`/api/folders/${state.activeFolderId}`).catch(() => null);
-          if (ad) { state.activeFolderBlocks = ad.blocks||[]; renderFolder(); }
+          // Don't rebuild the list under an open edit form
+          if (ad) { state.activeFolderBlocks = ad.blocks||[]; if (!state.editingBlockId && !state.editingFolderId) renderFolder(); }
         }
       }
     } catch {}

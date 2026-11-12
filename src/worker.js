@@ -540,12 +540,13 @@ async function computeStateToken(db) {
          (SELECT COALESCE(MAX(id), 0) || ':' || COALESCE(SUM(allow_emails), 0) FROM users) AS u,
          (SELECT COALESCE(MAX(id), 0) FROM direct_messages) AS dm,
          (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'messages_deleted') AS md,
+         (SELECT COALESCE(MAX(value), 0) FROM app_counters WHERE name = 'resources_edited') AS be,
          (SELECT COALESCE(MAX(updated_at), '') FROM shared_timer) AS t,
          (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM goals) AS g`
     )
     .first();
   if (!row) return '0';
-  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.t}|${row.g}`;
+  return `${row.f}|${row.b}|${row.e}|${row.r}|${row.u}|${row.dm}|${row.md}|${row.be}|${row.t}|${row.g}`;
 }
 
 // --- Shared goals checklist ---
@@ -770,6 +771,29 @@ function arenaContentsItems(data) {
 }
 
 // v3 removes a block from a channel by its connection id, which only the contents listing exposes
+// v3: PUT /blocks/{id} updates title, description (our note + credit) and, for text blocks, content
+async function updateArenaBlock(arenaBlockId, { title, note, content, username }, env) {
+  if (!arenaToken(env) || !arenaBlockId) return;
+  const credit = username ? `Added by ${username}` : '';
+  const payload = {
+    title: title || '',
+    description: [note, credit].filter(Boolean).join('\n\n')
+  };
+  if (typeof content === 'string') payload.content = content;
+  const res = await arenaFetch(`/blocks/${arenaBlockId}`, env, { method: 'PUT', body: JSON.stringify(payload) });
+  if (!res.ok) console.warn((await arenaError(res, 'block update')).message);
+}
+
+// v3: PUT /channels/{id} renames the channel (only the title is sent)
+async function renameArenaChannel(slugOrId, title, env) {
+  if (!arenaToken(env) || !slugOrId) return;
+  const res = await arenaFetch(`/channels/${encodeURIComponent(slugOrId)}`, env, {
+    method: 'PUT',
+    body: JSON.stringify({ title })
+  });
+  if (!res.ok) console.warn((await arenaError(res, 'channel rename')).message);
+}
+
 async function removeBlockFromArena(slug, blockId, env) {
   for (let page = 1; page <= 20; page++) {
     const res = await arenaFetch(
@@ -1679,6 +1703,31 @@ export default {
           return jsonResponse({ folder, blocks });
         }
 
+        // Rename a folder (creator only); renames the Are.na channel too
+        if (method === 'PATCH') {
+          const user = await getCurrentUser(request, env.DB);
+          if (!user) return errorResponse('Authentication required.', 401);
+          if (folder.created_by !== user.id) {
+            return errorResponse('Only the person who made this folder can edit it.', 403);
+          }
+          const body = await request.json().catch(() => ({}));
+          const title = String(body.title || '').trim();
+          if (!title) return errorResponse('Folder name can\'t be empty.');
+          if (title.length > 100) return errorResponse('Folder name can be up to 100 characters.');
+          await env.DB.prepare(`UPDATE folders SET title = ? WHERE id = ?`).bind(title, folderId).run();
+          await renameArenaChannel(folder.arena_channel_id || folder.arena_channel_slug, title, env)
+            .catch((err) => console.warn('Are.na channel rename failed:', err?.message || err));
+          // Bumps the poll state token so other clients pick up the new name
+          await env.DB
+            .prepare(
+              `INSERT INTO app_counters (name, value) VALUES ('resources_edited', 1)
+               ON CONFLICT(name) DO UPDATE SET value = value + 1`
+            )
+            .run();
+          const folders = await fetchFolders(env.DB);
+          return jsonResponse({ folders });
+        }
+
         if (method === 'DELETE') {
           const user = await getCurrentUser(request, env.DB);
           if (!user) return errorResponse('Authentication required.', 401);
@@ -1691,8 +1740,46 @@ export default {
         }
       }
 
-      // 11. Delete Individual Block
+      // 11. Edit / Delete Individual Block
       const blockMatch = pathname.match(/^\/api\/blocks\/(\d+)$/);
+      if (blockMatch && method === 'PATCH') {
+        const user = await getCurrentUser(request, env.DB);
+        if (!user) return errorResponse('Authentication required.', 401);
+        const blockId = parseInt(blockMatch[1], 10);
+        const block = await env.DB.prepare(`SELECT * FROM blocks WHERE id = ?`).bind(blockId).first();
+        if (!block) return errorResponse('Block not found.', 404);
+        // Only the person who shared the block can edit it
+        if (block.created_by !== user.id) return errorResponse('Only the person who shared this can edit it.', 403);
+
+        const body = await request.json().catch(() => ({}));
+        const title = String(body.title ?? block.title ?? '').trim().slice(0, 300) || null;
+        const note = String(body.note ?? block.note ?? '').trim().slice(0, 2000) || null;
+        let content = block.content;
+        if (block.block_type === 'text' && typeof body.content === 'string') {
+          content = body.content.trim();
+          if (!content) return errorResponse('Text can\'t be empty.');
+          if (content.length > 10000) return errorResponse('Text is too long.');
+        }
+        await env.DB
+          .prepare(`UPDATE blocks SET title = ?, note = ?, content = ? WHERE id = ?`)
+          .bind(title, note, content, blockId)
+          .run();
+        await updateArenaBlock(
+          block.arena_block_id,
+          { title, note, content: block.block_type === 'text' ? content : undefined, username: user.username },
+          env
+        ).catch((err) => console.warn('Are.na block update failed:', err?.message || err));
+        // Bumps the poll state token so other clients reload the folder
+        await env.DB
+          .prepare(
+            `INSERT INTO app_counters (name, value) VALUES ('resources_edited', 1)
+             ON CONFLICT(name) DO UPDATE SET value = value + 1`
+          )
+          .run();
+        const blocks = await fetchFolderBlocks(env.DB, block.folder_id);
+        return jsonResponse({ blocks });
+      }
+
       if (blockMatch && method === 'DELETE') {
         const user = await getCurrentUser(request, env.DB);
         if (!user) return errorResponse('Authentication required.', 401);

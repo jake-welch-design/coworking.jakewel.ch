@@ -183,8 +183,41 @@ select {
   font-style: italic;
 }
 
+#next-call-banner {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Two identical halves side by side; sliding left by one half loops with no seam */
+#next-call-content {
+  display: inline-flex;
+  width: max-content;
+  animation: banner-scroll 30s linear infinite;
+}
+
+#next-call-banner:hover #next-call-content {
+  animation-play-state: paused;
+}
+
+.banner-half {
+  display: inline-flex;
+  flex: none;
+}
+
+@keyframes banner-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #next-call-content {
+    animation: none;
+  }
+}
+
 #next-call-banner .banner-item {
-  margin-right: 6em;
+  flex: none;
+  padding-right: 6em;
 }
 
 #next-call-banner .banner-user {
@@ -1143,4 +1176,30 @@ input[type="checkbox"]:focus-visible {
 input[type="checkbox"]:disabled {
   border-color: #999999;
   cursor: default;
+}
+
+/* Inline edit form for a resource block */
+.block-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.block-edit label {
+  font-size: smaller;
+  margin-top: 4px;
+}
+
+.block-edit input,
+.block-edit textarea {
+  width: 100%;
+  font: inherit;
+  resize: vertical;
+}
+
+.block-edit-actions {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0 0;
 }

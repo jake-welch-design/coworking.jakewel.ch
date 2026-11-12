@@ -14,9 +14,9 @@
       </span>
     </header>
 
-    <marquee id="next-call-banner" scrollamount="4">
-      <span id="next-call-content"><strong>Next call:</strong> none</span>
-    </marquee>
+    <div id="next-call-banner" role="marquee" aria-label="Next call">
+      <div id="next-call-content"><span class="banner-item"><strong>Next call:</strong> none</span></div>
+    </div>
 
     <hr />
 
@@ -24,7 +24,7 @@
       <!-- Panes: order and widths are adjustable on desktop (see layout.js) -->
       <aside id="resources-pane" class="pane" data-pane="resources">
         <div id="folders-list-view">
-          <h2 class="pane-title">Resources</h2>
+          <h2 class="pane-title">Documents</h2>
 
           <details id="new-folder-details">
             <summary class="bevel-btn">+ New folder</summary>
@@ -55,7 +55,7 @@
         <div id="folder-detail-view" hidden>
           <h2 class="pane-title" id="active-folder-title"></h2>
           <p id="folder-nav">
-            <button type="button" id="back-to-folders-link" title="Back to resources" aria-label="Back to resources">&larr;</button>
+            <button type="button" id="back-to-folders-link" title="Back to documents" aria-label="Back to documents">&larr;</button>
             <button type="button" id="sync-folder-link" title="Sync with Are.na">Sync</button>
             <button
               type="button"
