@@ -158,7 +158,9 @@ const COLUMN_MIGRATIONS = [
   `ALTER TABLE messages ADD COLUMN attachment_id TEXT`,
   `ALTER TABLE direct_messages ADD COLUMN attachment_id TEXT`,
   // 'chat' files are only served to logged-in members; resource files stay public for Are.na
-  `ALTER TABLE uploaded_files ADD COLUMN scope TEXT NOT NULL DEFAULT 'public'`
+  `ALTER TABLE uploaded_files ADD COLUMN scope TEXT NOT NULL DEFAULT 'public'`,
+  // Name color for the sunset theme; NULL means derive it from name_color
+  `ALTER TABLE users ADD COLUMN name_color_sunset TEXT`
 ];
 
 // A user counts as offline if no heartbeat arrived within this window
@@ -202,6 +204,14 @@ function sanitizeColor(color) {
     return color.trim().toLowerCase();
   }
   return '#000000';
+}
+
+// Sunset name color: a hex color, or null to fall back to the daylight color
+function sanitizeOptionalColor(color) {
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color.trim())) {
+    return color.trim().toLowerCase();
+  }
+  return null;
 }
 
 function sanitizeFont(font) {
@@ -318,7 +328,7 @@ async function lookupCurrentUser(request, db) {
   const nowIso = new Date().toISOString();
   const row = await db
     .prepare(
-      `SELECT u.id, u.email, u.username, u.name_color, u.name_font, u.allow_emails
+      `SELECT u.id, u.email, u.username, u.name_color, u.name_font, u.name_color_sunset, u.allow_emails
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`
@@ -421,7 +431,7 @@ async function fetchFolderBlocks(db, folderId) {
 async function fetchUsers(db, viewer = null) {
   const { results } = await db
     .prepare(
-      `SELECT id, username, name_color, name_font, allow_emails, email, last_seen_at, presence
+      `SELECT id, username, name_color, name_font, name_color_sunset, allow_emails, email, last_seen_at, presence
        FROM users ORDER BY username COLLATE NOCASE ASC`
     )
     .all();
@@ -1297,7 +1307,7 @@ export default {
 
         const row = await env.DB
           .prepare(
-            `SELECT id, email, username, password_hash, name_color, name_font
+            `SELECT id, email, username, password_hash, name_color, name_font, name_color_sunset
              FROM users
              WHERE email = ? OR username = ?`
           )
@@ -1316,7 +1326,8 @@ export default {
               email: row.email,
               username: row.username,
               name_color: row.name_color,
-              name_font: row.name_font
+              name_font: row.name_font,
+              name_color_sunset: row.name_color_sunset
             }
           },
           200,
@@ -1348,15 +1359,24 @@ export default {
         const body = await request.json().catch(() => ({}));
         const nameColor = sanitizeColor(body.name_color ?? user.name_color);
         const nameFont = sanitizeFont(body.name_font ?? user.name_font);
+        // Omitted: keep it. null / "": go back to deriving it from the daylight color.
+        const nameColorSunset =
+          body.name_color_sunset === undefined ? user.name_color_sunset ?? null : sanitizeOptionalColor(body.name_color_sunset);
         const allowEmails = typeof body.allow_emails === 'boolean' ? (body.allow_emails ? 1 : 0) : (user.allow_emails ? 1 : 0);
 
         await env.DB
-          .prepare(`UPDATE users SET name_color = ?, name_font = ?, allow_emails = ? WHERE id = ?`)
-          .bind(nameColor, nameFont, allowEmails, user.id)
+          .prepare(`UPDATE users SET name_color = ?, name_font = ?, name_color_sunset = ?, allow_emails = ? WHERE id = ?`)
+          .bind(nameColor, nameFont, nameColorSunset, allowEmails, user.id)
           .run();
 
         return jsonResponse({
-          user: { ...user, name_color: nameColor, name_font: nameFont, allow_emails: allowEmails }
+          user: {
+            ...user,
+            name_color: nameColor,
+            name_font: nameFont,
+            name_color_sunset: nameColorSunset,
+            allow_emails: allowEmails
+          }
         });
       }
 

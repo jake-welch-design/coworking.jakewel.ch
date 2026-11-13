@@ -1159,16 +1159,6 @@ textarea.goal-edit {
   font-size: smaller;
 }
 
-/* Your own goals: a × after the name, shown on hover (styled like the chat ×) */
-button.goal-delete {
-  position: static;
-  flex: none;
-}
-
-.goal:hover button.goal-delete {
-  visibility: visible;
-}
-
 .goals-complete-heading {
   margin: 12px 0 4px;
   font-size: smaller;
@@ -1274,4 +1264,270 @@ ul.event-attendees {
 
 .event-actions {
   margin-top: 2px;
+}
+
+/* ===== Theme toggle (🏙️ / 🌇), left of the log-in links ===== */
+button#theme-toggle,
+button#theme-toggle:hover,
+button#theme-toggle:active {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: 1.15em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Style page: name preview on each theme's pane color */
+.style-previews {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.style-swatch {
+  padding: 6px 12px;
+  border: 1px solid #808080;
+}
+
+.style-swatch-day {
+  background: #ffffff;
+}
+
+.style-swatch-sunset {
+  background: #2c2c51;
+}
+
+/* ===== Sunset theme ===== */
+html[data-theme="sunset"] {
+  --sun-text: #ffc48a;
+  --sun-pane: rgba(44, 44, 81, 0.72);
+  --sun-head: #16162b;
+  --sun-inset: rgba(22, 22, 43, 0.55);
+  --sun-line: rgba(255, 196, 138, 0.55);
+  background: linear-gradient(to top, #401d11, #b45d40, #dd723c, #ff9641, #dcb697, #9ba5ae, #3e5879, #020b1a);
+  background-attachment: fixed;
+}
+
+html[data-theme="sunset"] body {
+  color: var(--sun-text);
+}
+
+/* No clouds at sunset */
+html[data-theme="sunset"] body::before {
+  display: none;
+}
+
+html[data-theme="sunset"] a,
+html[data-theme="sunset"] a:visited {
+  color: var(--sun-text);
+}
+
+html[data-theme="sunset"] hr {
+  border-top-color: var(--sun-head);
+  border-bottom-color: transparent;
+}
+
+html[data-theme="sunset"] #site-header,
+html[data-theme="sunset"] .pane,
+html[data-theme="sunset"] .panel,
+html[data-theme="sunset"] fieldset,
+html[data-theme="sunset"] #directory-drawer {
+  background: var(--sun-pane);
+  color: var(--sun-text);
+}
+
+html[data-theme="sunset"] #site-header {
+  background: transparent;
+}
+
+html[data-theme="sunset"] #next-call-banner {
+  background: #dd723c;
+  color: var(--sun-head);
+}
+
+html[data-theme="sunset"] #next-call-banner a,
+html[data-theme="sunset"] #next-call-banner a:visited {
+  color: var(--sun-head);
+}
+
+html[data-theme="sunset"] .pane,
+html[data-theme="sunset"] .panel {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* Drawer sits over the chat, so keep it more opaque */
+html[data-theme="sunset"] #directory-drawer {
+  background: rgba(30, 30, 58, 0.95);
+}
+
+html[data-theme="sunset"] .pane-title {
+  background: var(--sun-head);
+  color: var(--sun-text);
+}
+
+/* Buttons */
+html[data-theme="sunset"] button,
+html[data-theme="sunset"] .bevel-btn {
+  background: var(--sun-head);
+  color: var(--sun-text);
+  border-color: #4a4a80 #0a0a18 #0a0a18 #4a4a80;
+  box-shadow:
+    inset 1px 1px 0 #2c2c51,
+    1px 1px 0 #000000;
+}
+
+html[data-theme="sunset"] button:hover,
+html[data-theme="sunset"] .bevel-btn:hover,
+html[data-theme="sunset"] button:active,
+html[data-theme="sunset"] .bevel-btn:active {
+  border-color: #0a0a18 #4a4a80 #4a4a80 #0a0a18;
+  box-shadow: inset 1px 1px 0 #000000;
+}
+
+/* Inputs */
+html[data-theme="sunset"] input[type="text"],
+html[data-theme="sunset"] input[type="date"],
+html[data-theme="sunset"] input[type="time"],
+html[data-theme="sunset"] input[type="email"],
+html[data-theme="sunset"] input[type="password"],
+html[data-theme="sunset"] textarea,
+html[data-theme="sunset"] select {
+  background: var(--sun-inset);
+  color: var(--sun-text);
+  border-color: #0a0a18 #4a4a80 #4a4a80 #0a0a18;
+  box-shadow: inset 1px 1px 0 #000000;
+  color-scheme: dark;
+}
+
+html[data-theme="sunset"] ::placeholder {
+  color: rgba(255, 196, 138, 0.5);
+}
+
+/* Inset boxes: chat log, timer readout, tabs, menus */
+html[data-theme="sunset"] #chat-messages,
+html[data-theme="sunset"] #timer-display {
+  background: var(--sun-inset);
+  border-color: var(--sun-line);
+}
+
+html[data-theme="sunset"] .chat-tab {
+  border-color: var(--sun-line);
+}
+
+/* Group tab (DM tabs keep the other user's colour) */
+html[data-theme="sunset"] .chat-tab:not(.chat-tab-dm) {
+  background: var(--sun-head);
+  color: var(--sun-text);
+}
+
+html[data-theme="sunset"] .radio-menu {
+  background: var(--sun-head);
+  color: var(--sun-text);
+  border-color: var(--sun-line);
+}
+
+html[data-theme="sunset"] button.mixtape-item {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+html[data-theme="sunset"] button.mixtape-item:hover,
+html[data-theme="sunset"] button.mixtape-item:focus-visible {
+  background: #2c2c51;
+}
+
+html[data-theme="sunset"] button.chat-delete,
+html[data-theme="sunset"] button.chat-delete:hover {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--sun-text);
+}
+
+html[data-theme="sunset"] button#theme-toggle {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+html[data-theme="sunset"] .chat-line:hover {
+  background: rgba(255, 196, 138, 0.08);
+}
+
+html[data-theme="sunset"] .chat-image,
+html[data-theme="sunset"] .drag-over {
+  border-color: var(--sun-line);
+  outline-color: var(--sun-text);
+}
+
+html[data-theme="sunset"] .drop-indicator {
+  background: var(--sun-text);
+}
+
+html[data-theme="sunset"] blockquote {
+  border-left-color: var(--sun-line);
+}
+
+/* Muted text */
+html[data-theme="sunset"] #timer-by,
+html[data-theme="sunset"] .goals-login,
+html[data-theme="sunset"] .event-notes,
+html[data-theme="sunset"] .goal.done .goal-text {
+  color: rgba(255, 196, 138, 0.65);
+}
+
+/* Calendar */
+html[data-theme="sunset"] .cal-day:hover,
+html[data-theme="sunset"] .cal-day:focus-visible {
+  background: var(--sun-text);
+  color: var(--sun-head);
+}
+
+/* Checkboxes */
+html[data-theme="sunset"] input[type="checkbox"] {
+  background: var(--sun-inset);
+  border-color: var(--sun-text);
+}
+
+html[data-theme="sunset"] input[type="checkbox"]::before {
+  background: var(--sun-text);
+}
+
+/* Time's-up marching ants: same march, pane fill matches the sunset pane, flashing pale pink.
+   The full background set is repeated because the sunset .pane `background` shorthand resets it. */
+html[data-theme="sunset"] body.timer-alarm .pane {
+  --ant-color: #ffc2d6;
+  background-image:
+    linear-gradient(var(--sun-pane), var(--sun-pane)),
+    linear-gradient(90deg, var(--ant-color) 50%, transparent 50%),
+    linear-gradient(90deg, var(--ant-color) 50%, transparent 50%),
+    linear-gradient(0deg, var(--ant-color) 50%, transparent 50%),
+    linear-gradient(0deg, var(--ant-color) 50%, transparent 50%);
+  background-clip: padding-box, border-box, border-box, border-box, border-box;
+  background-origin: padding-box, border-box, border-box, border-box, border-box;
+  background-repeat: no-repeat, repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 100% 100%, 12px 3px, 12px 3px, 3px 12px, 3px 12px;
+  animation:
+    ants-march 0.5s linear infinite,
+    ants-flash-sunset 0.8s steps(1, end) infinite;
+}
+
+@keyframes ants-flash-sunset {
+  0% {
+    --ant-color: #ffc2d6;
+  }
+  50% {
+    --ant-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="sunset"] body.timer-alarm .pane {
+    animation: none;
+  }
 }

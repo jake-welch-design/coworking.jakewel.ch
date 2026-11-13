@@ -118,17 +118,38 @@
     return 0.299 * r + 0.587 * g + 0.114 * b > 150;
   }
 
+  const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+  function isSunset() {
+    return document.documentElement.getAttribute("data-theme") === "sunset";
+  }
+
+  // A user's name color for the current theme. Messages, events etc. only carry the
+  // daylight color, so the sunset one is looked up by username from the user list.
+  // No sunset color set: a pale, bright tint of the daylight color (theme.js).
+  function themeColor(username, color) {
+    const day = HEX_RE.test(color || "") ? color : "#000000";
+    if (!isSunset()) return day;
+    const key = String(username || "").toLowerCase();
+    const u =
+      (state.user && state.user.username.toLowerCase() === key && state.user) ||
+      state.users.find((x) => String(x.username).toLowerCase() === key);
+    if (u && HEX_RE.test(u.name_color_sunset || "")) return u.name_color_sunset;
+    return window.sunsetDefaultColor ? window.sunsetDefaultColor(day) : day;
+  }
+
   function applyUserStyle(node, color, font) {
-    const c = /^#[0-9a-fA-F]{6}$/.test(color || "") ? color : "#000000";
+    const c = HEX_RE.test(color || "") ? color : "#000000";
     node.style.color = c;
     node.style.fontFamily = font || "Georgia, serif";
-    node.style.textShadow = isVeryLightHex(c) ? "0 0 1px #000000" : "none";
+    node.style.textShadow =
+      !isSunset() && isVeryLightHex(c) ? "0 0 1px #000000" : "none";
   }
 
   function badge(username, color, font) {
     const span = document.createElement("span");
     span.textContent = username || "unknown";
-    applyUserStyle(span, color, font);
+    applyUserStyle(span, themeColor(username, color), font);
     return span;
   }
 
@@ -335,9 +356,7 @@
         "chat-tab chat-tab-dm" + (state.activeTab === t.id ? " active" : "");
       tab.dataset.tab = t.id;
 
-      const bg = /^#[0-9a-fA-F]{6}$/.test(t.name_color || "")
-        ? t.name_color
-        : "#000000";
+      const bg = themeColor(t.username, t.name_color);
       tab.style.background = bg;
       tab.style.color = isLightHex(bg) ? "#000000" : "#ffffff";
 
@@ -380,6 +399,9 @@
     if (!state.user) {
       el.authBar.innerHTML =
         '<a href="/login.html">Log in</a> / <a href="/signup.html">Sign up</a>';
+      if (window.themeToggleBtn) {
+        el.authBar.prepend(window.themeToggleBtn, " ");
+      }
       el.chatInput.placeholder = "Log in to post";
       return;
     }
@@ -423,6 +445,10 @@
     if ("Notification" in window) {
       el.authBar.appendChild(document.createTextNode(" · "));
       el.authBar.appendChild(notifyCheckbox());
+    }
+    if (window.themeToggleBtn) {
+      el.authBar.appendChild(document.createTextNode(" · "));
+      el.authBar.appendChild(window.themeToggleBtn);
     }
     el.authBar.appendChild(document.createTextNode(" · "));
     el.authBar.appendChild(
@@ -600,9 +626,7 @@
         ev.creator_color,
         ev.creator_font,
       );
-      const bg = /^#[0-9a-fA-F]{6}$/.test(ev.creator_color || "")
-        ? ev.creator_color
-        : "#000000";
+      const bg = themeColor(ev.creator_username, ev.creator_color);
       chip.className = "banner-user";
       chip.style.background = bg;
       chip.style.color = isLightHex(bg) ? "#000000" : "#ffffff";
@@ -1554,6 +1578,9 @@
     }
   }
 
+  // Name colors depend on the theme: redraw when it's toggled
+  window.addEventListener("themechange", () => renderAll());
+
   function renderAll(forceBottom = false) {
     renderAuthBar();
     renderBanner();
@@ -1568,7 +1595,7 @@
 
   // --- Goals: shared checklist of editable rows ---
   // Open goals on top, then blank rows to type new ones; ticking a goal moves it to "Complete" at the bottom.
-  // Each row shows who added it on the right. You can edit your own goals, or delete them with the × on hover.
+  // Each row shows who added it on the right. Double-click your own goal to edit it; clear the text to delete it.
   let goalsRenderPending = false;
 
   function renderGoals() {
@@ -1646,7 +1673,7 @@
   }
 
   // Entered goals show as wrapping text; blank rows are inputs for new goals.
-  // Click your own open goal to edit it (a textarea that grows with the text).
+  // Double-click your own goal to edit it (a textarea that grows with the text).
   function goalRow(g) {
     const li = document.createElement("li");
     li.className = "goal" + (g?.done ? " done" : "");
@@ -1718,23 +1745,9 @@
 
     const mine = state.user && g.created_by === state.user.id;
     if (mine) {
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "chat-delete goal-delete";
-      del.textContent = "×";
-      del.title = "Delete goal";
-      del.setAttribute("aria-label", `Delete goal "${g.body}"`);
-      del.addEventListener("click", () => {
-        if (!confirm("Delete this goal?")) return;
-        del.disabled = true;
-        goalRequest(`/api/goals/${g.id}`, "DELETE");
-      });
-      li.appendChild(del);
-    }
-    if (mine && !g.done) {
       text.classList.add("editable");
-      text.title = "Click to edit";
-      text.addEventListener("click", (e) => {
+      text.title = "Double-click to edit";
+      text.addEventListener("dblclick", (e) => {
         if (e.target.closest("a")) return; // links open normally
         const ta = document.createElement("textarea");
         ta.className = "goal-input goal-edit";
@@ -1760,11 +1773,6 @@
             done = true;
             ta.replaceWith(text);
             if (goalsRenderPending) renderGoals();
-            return;
-          }
-          if (!val && !confirm("Delete this goal?")) {
-            ta.value = g.body;
-            ta.focus();
             return;
           }
           done = true;

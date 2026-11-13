@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   name_color TEXT NOT NULL DEFAULT '#000000',
   name_font TEXT NOT NULL DEFAULT 'Georgia, serif',
+  name_color_sunset TEXT, -- name color for the sunset theme; NULL = derive from name_color
   created_at TEXT NOT NULL
 );
 

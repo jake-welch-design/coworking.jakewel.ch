@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Name style — Coworking</title>
   <link rel="stylesheet" href="/styles.css" />
+    <script src="/theme.js"></script>
 </head>
 <body>
   <header id="site-header">
@@ -17,7 +18,12 @@
     <h2 class="pane-title">Name style</h2>
     <form id="style-form">
       <p>
-        <label>Color: <input type="color" id="style-color" value="#000000" /></label>
+        <label>🏙️ Daylight color: <input type="color" id="style-color" value="#000000" /></label>
+      </p>
+      <p>
+        <label>🌇 Sunset color: <input type="color" id="style-color-sunset" value="#cccccc" /></label>
+        <span id="style-sunset-auto">(auto)</span>
+        <button type="button" id="style-sunset-reset" hidden>Use auto</button>
       </p>
       <p>
         <label>Font:
@@ -37,7 +43,11 @@
           </select>
         </label>
       </p>
-      <p>Preview: <span id="style-name-preview">username</span></p>
+      <p>Preview:</p>
+      <p class="style-previews">
+        <span class="style-swatch style-swatch-day"><span id="style-name-preview">username</span></span>
+        <span class="style-swatch style-swatch-sunset"><span id="style-name-preview-sunset">username</span></span>
+      </p>
       <p id="style-error" hidden></p>
       <p>
         <button type="submit">Save</button>
@@ -48,15 +58,35 @@
 
   <script>
     const previewEl = document.getElementById('style-name-preview');
+    const previewSunsetEl = document.getElementById('style-name-preview-sunset');
     const colorEl = document.getElementById('style-color');
+    const sunsetEl = document.getElementById('style-color-sunset');
+    const sunsetAutoEl = document.getElementById('style-sunset-auto');
+    const sunsetResetEl = document.getElementById('style-sunset-reset');
     const fontEl = document.getElementById('style-font');
     const authBar = document.getElementById('auth-bar');
 
+    // Until a sunset color is picked, it follows the daylight color (a pale, bright tint of it)
+    let sunsetCustom = false;
+
     function updatePreview() {
+      if (!sunsetCustom) sunsetEl.value = window.sunsetDefaultColor(colorEl.value);
+      sunsetAutoEl.hidden = sunsetCustom;
+      sunsetResetEl.hidden = !sunsetCustom;
       previewEl.style.color = colorEl.value;
+      previewSunsetEl.style.color = sunsetEl.value;
       previewEl.style.fontFamily = fontEl.value;
+      previewSunsetEl.style.fontFamily = fontEl.value;
     }
     colorEl.addEventListener('input', updatePreview);
+    sunsetEl.addEventListener('input', () => {
+      sunsetCustom = true;
+      updatePreview();
+    });
+    sunsetResetEl.addEventListener('click', () => {
+      sunsetCustom = false;
+      updatePreview();
+    });
     fontEl.addEventListener('change', updatePreview);
 
     // Load current user
@@ -68,7 +98,12 @@
           return;
         }
         previewEl.textContent = data.user.username;
+        previewSunsetEl.textContent = data.user.username;
         colorEl.value = data.user.name_color || '#000000';
+        if (/^#[0-9a-fA-F]{6}$/.test(data.user.name_color_sunset || '')) {
+          sunsetCustom = true;
+          sunsetEl.value = data.user.name_color_sunset;
+        }
         fontEl.value = data.user.name_font || 'Georgia, serif';
         updatePreview();
         authBar.textContent = data.user.username;
@@ -88,6 +123,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name_color: colorEl.value,
+            name_color_sunset: sunsetCustom ? sunsetEl.value : null,
             name_font: fontEl.value
           })
         });
