@@ -913,6 +913,11 @@ button.chat-delete:focus-visible {
   visibility: visible;
 }
 
+/* "hide" on other people's messages: small word instead of × */
+button.chat-hide {
+  font-size: 10px;
+}
+
 /* Touch screens have no hover: keep the × faintly visible */
 @media (hover: none) {
   button.chat-delete {

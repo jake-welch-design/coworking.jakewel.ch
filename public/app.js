@@ -724,8 +724,28 @@
     return d.attachment.id;
   }
 
-  // One chat line; your own messages get a × delete button that shows on hover
-  function chatLine(msg, d, authorId, onDelete) {
+  // Messages you've hidden for yourself; per-browser only (key like "g:12" or "dm:7")
+  const HIDDEN_KEY = "coworking.chat.hidden";
+  const hiddenMsgs = new Set(
+    (() => {
+      try {
+        const v = JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]");
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
+      }
+    })(),
+  );
+  function hideMessage(key, rerender) {
+    hiddenMsgs.add(key);
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenMsgs].slice(-2000)));
+    } catch {}
+    rerender();
+  }
+
+  // One chat line; your own messages get a × delete button, others' a "hide" button (on hover)
+  function chatLine(msg, d, authorId, onDelete, onHide) {
     const line = document.createElement("div");
     line.className = "chat-line";
     const t = document.createElement("small");
@@ -757,6 +777,15 @@
         }
       });
       line.appendChild(del);
+    } else if (onHide) {
+      const hide = document.createElement("button");
+      hide.type = "button";
+      hide.className = "chat-delete chat-hide";
+      hide.textContent = "hide";
+      hide.title = "Hide this message (only for you)";
+      hide.setAttribute("aria-label", "Hide message");
+      hide.addEventListener("click", onHide);
+      line.appendChild(hide);
     }
     return line;
   }
@@ -776,12 +805,13 @@
         '<p class="chat-login"><a href="/login.html">Login to join</a></p>';
       return;
     }
-    if (!state.messages.length) {
+    const visible = state.messages.filter((m) => !hiddenMsgs.has(`g:${m.id}`));
+    if (!visible.length) {
       el.chatMessages.innerHTML = "<p>No messages.</p>";
       return;
     }
     let prevDay = "";
-    for (const msg of state.messages) {
+    for (const msg of visible) {
       const d = new Date(msg.created_at);
       const day = fmtDay(d);
       if (day !== prevDay) {
@@ -796,14 +826,16 @@
           await api(`/api/messages/${msg.id}`, { method: "DELETE" });
           state.messages = state.messages.filter((m) => m.id !== msg.id);
           renderChat(false);
-        }),
+        }, () => hideMessage(`g:${msg.id}`, () => renderChat(false))),
       );
     }
     if (stick) el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
   }
 
   function renderDMChat(userId, forceBottom = false) {
-    const msgs = state.dmMessages[userId] || [];
+    const msgs = (state.dmMessages[userId] || []).filter(
+      (m) => !hiddenMsgs.has(`dm:${m.id}`),
+    );
     const stick =
       forceBottom ||
       el.chatMessages.scrollHeight -
@@ -833,7 +865,7 @@
             (m) => m.id !== msg.id,
           );
           renderDMChat(userId, false);
-        }),
+        }, () => hideMessage(`dm:${msg.id}`, () => renderDMChat(userId, false))),
       );
     }
     if (stick) el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
