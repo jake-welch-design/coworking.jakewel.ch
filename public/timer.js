@@ -92,7 +92,7 @@
       by: timer.updated_by_username || null
     };
     // Show the shared duration, unless someone is typing a new one
-    if (document.activeElement !== minutesInput) minutesInput.value = String(t.minutes);
+    if (minutesInput.ownerDocument.activeElement !== minutesInput) minutesInput.value = String(t.minutes);
     render();
   }
 

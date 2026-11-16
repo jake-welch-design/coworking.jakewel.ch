@@ -205,8 +205,12 @@ select {
 }
 
 @keyframes banner-scroll {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -780,9 +784,15 @@ body.timer-alarm .pane {
     linear-gradient(0deg, var(--ant-color) 50%, transparent 50%),
     linear-gradient(0deg, var(--ant-color) 50%, transparent 50%);
   background-clip: padding-box, border-box, border-box, border-box, border-box;
-  background-origin: padding-box, border-box, border-box, border-box, border-box;
+  background-origin:
+    padding-box, border-box, border-box, border-box, border-box;
   background-repeat: no-repeat, repeat-x, repeat-x, repeat-y, repeat-y;
-  background-size: 100% 100%, 12px 3px, 12px 3px, 3px 12px, 3px 12px;
+  background-size:
+    100% 100%,
+    12px 3px,
+    12px 3px,
+    3px 12px,
+    3px 12px;
   animation:
     ants-march 0.5s linear infinite,
     ants-flash 0.8s steps(1, end) infinite;
@@ -791,10 +801,20 @@ body.timer-alarm .pane {
 /* top → right, right ↓, bottom ←, left ↑ (one dash period per cycle) */
 @keyframes ants-march {
   from {
-    background-position: 0 0, 0 0, 0 100%, 0 0, 100% 0;
+    background-position:
+      0 0,
+      0 0,
+      0 100%,
+      0 0,
+      100% 0;
   }
   to {
-    background-position: 0 0, 12px 0, -12px 100%, 0 -12px, 100% 12px;
+    background-position:
+      0 0,
+      12px 0,
+      -12px 100%,
+      0 -12px,
+      100% 12px;
   }
 }
 
@@ -1306,7 +1326,17 @@ html[data-theme="sunset"] {
   --sun-head: #16162b;
   --sun-inset: rgba(22, 22, 43, 0.55);
   --sun-line: rgba(255, 196, 138, 0.55);
-  background: linear-gradient(to top, #401d11, #b45d40, #dd723c, #ff9641, #dcb697, #9ba5ae, #3e5879, #020b1a);
+  background: linear-gradient(
+    to top,
+    #401d11,
+    #b45d40,
+    #dd723c,
+    #ff9641,
+    #dcb697,
+    #9ba5ae,
+    #3e5879,
+    #020b1a
+  );
   background-attachment: fixed;
 }
 
@@ -1343,7 +1373,7 @@ html[data-theme="sunset"] #site-header {
 }
 
 html[data-theme="sunset"] #next-call-banner {
-  background: #dd723c;
+  background: #7ea0be;
   color: var(--sun-head);
 }
 
@@ -1509,9 +1539,15 @@ html[data-theme="sunset"] body.timer-alarm .pane {
     linear-gradient(0deg, var(--ant-color) 50%, transparent 50%),
     linear-gradient(0deg, var(--ant-color) 50%, transparent 50%);
   background-clip: padding-box, border-box, border-box, border-box, border-box;
-  background-origin: padding-box, border-box, border-box, border-box, border-box;
+  background-origin:
+    padding-box, border-box, border-box, border-box, border-box;
   background-repeat: no-repeat, repeat-x, repeat-x, repeat-y, repeat-y;
-  background-size: 100% 100%, 12px 3px, 12px 3px, 3px 12px, 3px 12px;
+  background-size:
+    100% 100%,
+    12px 3px,
+    12px 3px,
+    3px 12px,
+    3px 12px;
   animation:
     ants-march 0.5s linear infinite,
     ants-flash-sunset 0.8s steps(1, end) infinite;
@@ -1530,4 +1566,87 @@ html[data-theme="sunset"] body.timer-alarm .pane {
   html[data-theme="sunset"] body.timer-alarm .pane {
     animation: none;
   }
+}
+
+/* ===== Pop-out (Picture-in-Picture) panes — popout.js ===== */
+.has-popout .pane {
+  position: relative;
+}
+
+/* Leave room for the button at the right of every title bar */
+.has-popout .pane-title {
+  padding-right: 34px;
+}
+
+/* Small icon in the pane's top-right corner, over the title bar; shown on hover */
+button.pane-popout-btn,
+button.pane-popout-btn:hover,
+button.pane-popout-btn:active {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 34px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.pane:hover > button.pane-popout-btn,
+button.pane-popout-btn:focus-visible,
+.pip-body button.pane-popout-btn {
+  opacity: 0.85;
+}
+
+button.pane-popout-btn:hover {
+  opacity: 1;
+}
+
+html[data-theme="sunset"] button.pane-popout-btn {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--sun-text);
+}
+
+/* Stand-in left in the layout while a pane is popped out */
+.pane-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  opacity: 0.75;
+}
+
+.pane-placeholder p {
+  margin: 0;
+}
+
+/* Inside the PiP window: the pane fills it */
+body.pip-body {
+  height: 100vh;
+  min-height: 0;
+}
+
+body.pip-body > .pane {
+  flex: 1 1 auto !important;
+  min-height: 0;
+  margin: 0;
+  box-shadow: none;
+}
+
+body.pip-body > .pane #chat-messages {
+  flex: 1;
+  height: auto;
 }

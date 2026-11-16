@@ -153,6 +153,12 @@
     return span;
   }
 
+  // Page-wide listeners that should also work inside a pop-out pane window (popout.js adds them there)
+  function listenAllDocs(type, fn) {
+    document.addEventListener(type, fn);
+    (window.CoworkingDocListeners ||= []).push([type, fn]);
+  }
+
   function actionLink(label, onClick) {
     const a = document.createElement("a");
     a.href = "#";
@@ -1601,7 +1607,7 @@
   function renderGoals() {
     const list = document.getElementById("goals-list");
     // Don't rebuild under someone who's typing; catch up when they leave the field
-    const active = document.activeElement;
+    const active = list.ownerDocument.activeElement; // the pane may be in a pop-out window
     if (
       list.contains(active) &&
       active.classList.contains("goal-input") &&
@@ -2027,7 +2033,7 @@
     document
       .getElementById("directory-close-btn")
       .addEventListener("click", () => setDirectoryOpen(false));
-    document.addEventListener("keydown", (e) => {
+    listenAllDocs("keydown", (e) => {
       if (e.key === "Escape") setDirectoryOpen(false);
     });
 
@@ -2423,10 +2429,10 @@
         b.setAttribute("aria-expanded", String(open));
       }),
     );
-    document.addEventListener("click", (e) => {
+    listenAllDocs("click", (e) => {
       if (!e.target.closest(".radio-pop")) closePops();
     });
-    document.addEventListener("keydown", (e) => {
+    listenAllDocs("keydown", (e) => {
       if (e.key === "Escape") closePops();
     });
     // The timer's alarm mutes the radio while it plays (timer.js calls this)

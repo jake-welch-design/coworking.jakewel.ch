@@ -33,6 +33,16 @@
   workspace.querySelectorAll(".pane[data-pane]").forEach((p) => {
     panes[p.dataset.pane] = p;
   });
+  // popout.js swaps in a placeholder while a pane is in a Picture-in-Picture window
+  const slots = {};
+  const paneEl = (id) => slots[id] || panes[id];
+  window.CoworkingLayout = {
+    setSlot(id, el) {
+      if (el) slots[id] = el;
+      else delete slots[id];
+      build();
+    },
+  };
   // Breakpoints: wide = saved layout; medium = at most 2 columns; mobile = one stack
   const mobileQuery = window.matchMedia("(max-width: 768px)");
   const mediumQuery = window.matchMedia("(max-width: 1200px)");
@@ -145,7 +155,7 @@
           g.title = "Drag to resize · double-click to reset layout";
           colEl.appendChild(g);
         }
-        colEl.appendChild(panes[p.id]);
+        colEl.appendChild(paneEl(p.id));
       });
       workspace.appendChild(colEl);
       colEls.push(colEl);
@@ -160,7 +170,7 @@
     view.columns.forEach((col, ci) => {
       colEls[ci].style.flex = `${col.w} 1 0px`;
       col.panes.forEach((p) => {
-        panes[p.id].style.flex = `${p.h} 1 0px`;
+        paneEl(p.id).style.flex = `${p.h} 1 0px`;
       });
     });
   }
@@ -194,7 +204,7 @@
   }
 
   function clearEdgeHover() {
-    for (const p of Object.values(panes)) p.classList.remove("edge-hover");
+    for (const p of PANE_IDS.map(paneEl)) p.classList.remove("edge-hover");
   }
 
   // --- Resize ---
@@ -229,8 +239,8 @@
         b,
         start: e.clientY,
         min: MIN_H,
-        pxA: panes[a.id].getBoundingClientRect().height,
-        pxB: panes[b.id].getBoundingClientRect().height,
+        pxA: paneEl(a.id).getBoundingClientRect().height,
+        pxB: paneEl(b.id).getBoundingClientRect().height,
         sum: a.h + b.h,
         key: "h",
       };
@@ -301,7 +311,7 @@
         const others = col.panes.filter((p) => p.id !== move.id);
         let slot = 0;
         for (const p of others) {
-          const pr = panes[p.id].getBoundingClientRect();
+          const pr = paneEl(p.id).getBoundingClientRect();
           if (y > pr.top + pr.height / 2) slot++;
         }
         target = { type: "stack", col, slot, others };
@@ -324,10 +334,10 @@
       let ly;
       if (!others.length) ly = cr.top + cr.height / 2;
       else if (slot === 0)
-        ly = panes[others[0].id].getBoundingClientRect().top - GUTTER_PX / 2;
+        ly = paneEl(others[0].id).getBoundingClientRect().top - GUTTER_PX / 2;
       else
         ly =
-          panes[others[slot - 1].id].getBoundingClientRect().bottom +
+          paneEl(others[slot - 1].id).getBoundingClientRect().bottom +
           GUTTER_PX / 2;
       indicator.className = "drop-indicator drop-indicator-row";
       indicator.style.left = `${cr.left - ws.left}px`;
@@ -397,7 +407,7 @@
     }
     if (!editable()) return;
     const overUI = isInteractive(e.target);
-    for (const p of Object.values(panes)) {
+    for (const p of PANE_IDS.map(paneEl)) {
       p.classList.toggle(
         "edge-hover",
         !overUI && nearEdge(p, e.clientX, e.clientY),
