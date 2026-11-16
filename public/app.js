@@ -1654,7 +1654,10 @@
     list.innerHTML = "";
     const goals = state.goals || [];
     const open = goals.filter((g) => !g.done);
-    const done = goals.filter((g) => g.done);
+    // Most recently completed first (ticking a goal stamps updated_at)
+    const done = goals
+      .filter((g) => g.done)
+      .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || b.id - a.id);
 
     if (!state.user) {
       const p = document.createElement("p");

@@ -643,7 +643,7 @@ async function computeStateToken(db) {
 async function fetchGoals(db) {
   const { results } = await db
     .prepare(
-      `SELECT g.id, g.body, g.done, g.created_at, g.created_by,
+      `SELECT g.id, g.body, g.done, g.created_at, g.updated_at, g.created_by,
               u.username, u.name_color, u.name_font
        FROM goals g
        LEFT JOIN users u ON u.id = g.created_by
