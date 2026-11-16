@@ -1,12 +1,13 @@
-// Newspaper pane: headlines per category from /api/news (BBC News RSS, cached on the server).
+// Newspaper pane: headlines per category from /api/news (NPR RSS, cached on the server).
 
 (function () {
   "use strict";
 
   const CATEGORIES = [
     ["top", "Top"],
-    ["world", "World"],
     ["us", "U.S."],
+    ["politics", "Politics"],
+    ["world", "World"],
     ["business", "Business"],
     ["tech", "Tech"],
     ["science", "Science"],

@@ -184,15 +184,16 @@ async function ensureSchema(db) {
   schemaInitialized = true;
 }
 
-// --- Newspaper: BBC News RSS, fetched server-side (no CORS, no API key) and cached briefly ---
+// --- Newspaper: NPR RSS, fetched server-side (no CORS, no API key) and cached briefly ---
 const NEWS_FEEDS = {
-  top: 'https://feeds.bbci.co.uk/news/rss.xml',
-  world: 'https://feeds.bbci.co.uk/news/world/rss.xml',
-  us: 'https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml',
-  business: 'https://feeds.bbci.co.uk/news/business/rss.xml',
-  tech: 'https://feeds.bbci.co.uk/news/technology/rss.xml',
-  science: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml',
-  arts: 'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml'
+  top: 'https://feeds.npr.org/1001/rss.xml',
+  us: 'https://feeds.npr.org/1003/rss.xml',
+  politics: 'https://feeds.npr.org/1014/rss.xml',
+  world: 'https://feeds.npr.org/1004/rss.xml',
+  business: 'https://feeds.npr.org/1006/rss.xml',
+  tech: 'https://feeds.npr.org/1019/rss.xml',
+  science: 'https://feeds.npr.org/1007/rss.xml',
+  arts: 'https://feeds.npr.org/1008/rss.xml'
 };
 const NEWS_TTL_MS = 15 * 60 * 1000;
 const newsCache = new Map(); // category -> { at, items }
