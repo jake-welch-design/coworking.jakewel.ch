@@ -601,14 +601,16 @@
   function bannerItem(ev) {
     const item = document.createElement("span");
     item.className = "banner-item";
+    if (!ev) {
+      const none = document.createElement("strong");
+      none.textContent = "No calls scheduled";
+      item.appendChild(none);
+      return item;
+    }
     const label = document.createElement("strong");
     label.textContent = "Next call:";
     item.appendChild(label);
     item.appendChild(document.createTextNode(" "));
-    if (!ev) {
-      item.appendChild(document.createTextNode("none"));
-      return item;
-    }
     const now = Date.now(),
       s = Date.parse(ev.starts_at),
       e = s + (ev.duration_minutes || 60) * 60000;

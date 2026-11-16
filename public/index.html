@@ -16,7 +16,7 @@
     </header>
 
     <div id="next-call-banner" role="marquee" aria-label="Next call">
-      <div id="next-call-content"><span class="banner-item"><strong>Next call:</strong> none</span></div>
+      <div id="next-call-content"><span class="banner-item"><strong>No calls scheduled</strong></span></div>
     </div>
 
     <hr />
@@ -110,6 +110,13 @@
           <ul id="blocks-list"></ul>
         </div>
       </aside>
+
+      <section id="newspaper-pane" class="pane" data-pane="newspaper">
+        <h2 class="pane-title">Newspaper</h2>
+        <p id="news-cats" role="tablist" aria-label="News categories"></p>
+        <p id="news-status" hidden></p>
+        <ul id="news-list"></ul>
+      </section>
 
       <section id="calendar-pane" class="pane" data-pane="calendar">
         <div>
@@ -343,6 +350,7 @@
     </main>
 
     <script src="/app.js"></script>
+    <script src="/news.js"></script>
     <script src="/layout.js"></script>
     <script src="/popout.js"></script>
     <script src="/timer.js"></script>

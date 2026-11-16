@@ -184,6 +184,69 @@ async function ensureSchema(db) {
   schemaInitialized = true;
 }
 
+// --- Newspaper: BBC News RSS, fetched server-side (no CORS, no API key) and cached briefly ---
+const NEWS_FEEDS = {
+  top: 'https://feeds.bbci.co.uk/news/rss.xml',
+  world: 'https://feeds.bbci.co.uk/news/world/rss.xml',
+  us: 'https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml',
+  business: 'https://feeds.bbci.co.uk/news/business/rss.xml',
+  tech: 'https://feeds.bbci.co.uk/news/technology/rss.xml',
+  science: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml',
+  arts: 'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml'
+};
+const NEWS_TTL_MS = 15 * 60 * 1000;
+const newsCache = new Map(); // category -> { at, items }
+
+function decodeXmlText(str) {
+  return String(str || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .trim();
+}
+
+function parseRssItems(xml) {
+  const items = [];
+  const re = /<item\b[\s\S]*?<\/item>/g;
+  let m;
+  while ((m = re.exec(xml)) && items.length < 40) {
+    const block = m[0];
+    const tag = (name) => {
+      const t = block.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`));
+      return t ? decodeXmlText(t[1]) : '';
+    };
+    const title = tag('title');
+    const link = tag('link');
+    if (!title || !/^https?:\/\//.test(link)) continue;
+    const date = Date.parse(tag('pubDate'));
+    items.push({
+      title,
+      link,
+      summary: tag('description').slice(0, 300),
+      published_at: Number.isFinite(date) ? new Date(date).toISOString() : null
+    });
+  }
+  return items;
+}
+
+async function fetchNews(category) {
+  const hit = newsCache.get(category);
+  if (hit && Date.now() - hit.at < NEWS_TTL_MS) return hit.items;
+  try {
+    const res = await fetch(NEWS_FEEDS[category], { headers: { 'User-Agent': 'coworking-hub/1.0 (RSS reader)' } });
+    if (!res.ok) throw new Error(`Feed returned ${res.status}`);
+    const items = parseRssItems(await res.text());
+    newsCache.set(category, { at: Date.now(), items });
+    return items;
+  } catch (err) {
+    if (hit) return hit.items; // serve stale rather than nothing
+    throw err;
+  }
+}
+
 function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -2051,6 +2114,17 @@ export default {
       }
 
       // 13. User Directory
+      if (method === 'GET' && pathname === '/api/news') {
+        const category = url.searchParams.get('category') || 'top';
+        if (!NEWS_FEEDS[category]) return errorResponse('Unknown news category.', 400);
+        try {
+          const items = await fetchNews(category);
+          return jsonResponse({ category, items });
+        } catch (err) {
+          return errorResponse('Could not load the news feed right now.', 502);
+        }
+      }
+
       if (method === 'GET' && pathname === '/api/users') {
         const viewer = await getCurrentUser(request, env.DB);
         const users = await fetchUsers(env.DB, viewer);

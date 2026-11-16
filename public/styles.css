@@ -1650,3 +1650,55 @@ body.pip-body > .pane #chat-messages {
   flex: 1;
   height: auto;
 }
+
+/* Newspaper: category buttons up top, tiny headline list below */
+#newspaper-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+#news-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+  flex: none;
+}
+
+.news-cat.active {
+  font-weight: bold;
+}
+
+#news-status {
+  font-size: 8px;
+  margin: 0 0 6px;
+}
+
+#news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 8px;
+  line-height: 1.35;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.news-item {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.news-title {
+  font-weight: bold;
+  color: inherit;
+}
+
+.news-time {
+  opacity: 0.6;
+}
+
+.news-summary {
+  margin: 2px 0 0;
+}
