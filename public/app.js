@@ -2416,7 +2416,85 @@
     }
     const items = mixMenu.querySelectorAll(".mixtape-item");
 
+    // "Now on" label for the playing NTS channel, from NTS's public live API (CORS-open)
+    const nowEl = document.getElementById("nts-now");
+    const CHANNEL_POLL_MS = 5 * 60000;
+    let liveShows = {}; // channel "1"/"2" -> { title, endsAt }
+    let liveFetchedAt = 0,
+      liveTimer = null;
+    const playingChannel = () => {
+      const cur = !audio.paused && audio.dataset.src ? audio.dataset.src : "";
+      const b = [...btns].find((x) => x.dataset.src === cur);
+      return b ? b.dataset.n : null;
+    };
+    // "10–11 AM", "10:30–11:30 AM", "11 AM–1 PM" in the listener's own time zone
+    const fmtShowTime = (startsAt, endsAt) => {
+      if (!startsAt || !endsAt) return "";
+      const parts = (t) => {
+        const d = new Date(t);
+        const h = d.getHours();
+        const m = d.getMinutes();
+        return {
+          clock: `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}`,
+          ap: h < 12 ? "AM" : "PM",
+        };
+      };
+      const a = parts(startsAt),
+        b = parts(endsAt);
+      return a.ap === b.ap
+        ? `${a.clock}\u2013${b.clock} ${b.ap}`
+        : `${a.clock} ${a.ap}\u2013${b.clock} ${b.ap}`;
+    };
+    const renderNow = () => {
+      const show = liveShows[playingChannel()];
+      nowEl.hidden = !show;
+      nowEl.textContent = "";
+      nowEl.title = "";
+      if (!show) return;
+      const time = fmtShowTime(show.startsAt, show.endsAt);
+      nowEl.appendChild(document.createTextNode(show.title));
+      if (time) {
+        const t = document.createElement("span");
+        t.className = "nts-now-time";
+        t.textContent = ` \u00b7 ${time}`;
+        nowEl.appendChild(t);
+      }
+      nowEl.title = `Now on NTS: ${show.title}${time ? ` (${time})` : ""}`;
+    };
+    // Fetch while a channel plays; refetch when the current show ends (or every 5 min)
+    const refreshLive = async () => {
+      clearTimeout(liveTimer);
+      if (!playingChannel()) return;
+      try {
+        const r = await fetch("https://www.nts.live/api/v2/live");
+        const d = await r.json();
+        liveShows = {};
+        for (const c of d.results || []) {
+          const title = c.now?.broadcast_title;
+          if (title)
+            liveShows[c.channel_name] = {
+              title,
+              startsAt: Date.parse(c.now.start_timestamp) || 0,
+              endsAt: Date.parse(c.now.end_timestamp) || 0,
+            };
+        }
+        liveFetchedAt = Date.now();
+      } catch {}
+      renderNow();
+      const ends = liveShows[playingChannel()]?.endsAt;
+      const untilEnd = ends ? ends - Date.now() + 15000 : CHANNEL_POLL_MS;
+      liveTimer = setTimeout(
+        refreshLive,
+        Math.max(30000, Math.min(untilEnd, CHANNEL_POLL_MS)),
+      );
+    };
+
     const render = () => {
+      const ch = playingChannel();
+      if (ch && (!liveShows[ch] || Date.now() - liveFetchedAt > CHANNEL_POLL_MS))
+        refreshLive();
+      else if (!ch) clearTimeout(liveTimer);
+      renderNow();
       const cur = !audio.paused && audio.dataset.src ? audio.dataset.src : "";
       btns.forEach((b) => {
         const n = b.dataset.n;

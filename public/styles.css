@@ -374,6 +374,33 @@ body.is-moving * {
   border: solid 1px white;
 }
 
+/* Show on air for the playing NTS channel: small tinted chip, truncates if long */
+#radio-bar {
+  min-width: 0;
+}
+
+#nts-now {
+  min-width: 0;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+#nts-now .nts-now-time {
+  opacity: 0.75;
+}
+
+#nts-now[hidden] {
+  display: none;
+}
+
 /* Mixtape dropdown + volume popup, anchored under their buttons on the right */
 .radio-pop {
   position: relative;
