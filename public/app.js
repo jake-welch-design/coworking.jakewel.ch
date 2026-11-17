@@ -1974,10 +1974,10 @@
           });
           el.chatInput.value = "";
           setPendingFile(null);
-          if (d.message && !state.messages.some((m) => m.id === d.message.id)) {
+          if (d.message && !state.messages.some((m) => m.id === d.message.id))
             state.messages.push(d.message);
-            renderChat(true);
-          }
+          // Always jump to your own new message, even if a poll already added it
+          renderChat(true);
         } else {
           // DM
           const userId = state.activeTab;
@@ -1992,8 +1992,8 @@
             if (!state.dmMessages[userId].some((m) => m.id === d.message.id)) {
               state.dmMessages[userId].push(d.message);
             }
-            renderDMChat(userId, true);
           }
+          renderDMChat(userId, true);
         }
       } catch (e) {
         alert(e.message);
