@@ -790,13 +790,74 @@
     return line;
   }
 
+  // --- Chat scrolling: stay pinned to the newest message unless you've scrolled up ---
+  const CHAT_PIN_PX = 60; // within this of the bottom counts as "at the bottom"
+  let chatPinned = true;
+  const chatJumpBtn = document.createElement("button");
+  chatJumpBtn.type = "button";
+  chatJumpBtn.id = "chat-jump-btn";
+  chatJumpBtn.hidden = true;
+  chatJumpBtn.title = "Jump to latest";
+  chatJumpBtn.setAttribute("aria-label", "Jump to latest message");
+  chatJumpBtn.innerHTML =
+    '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 2v11M3 8.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  el.chatMessages.after(chatJumpBtn);
+
+  function chatDistFromBottom() {
+    const c = el.chatMessages;
+    return c.scrollHeight - c.scrollTop - c.clientHeight;
+  }
+
+  function scrollChatToBottom() {
+    el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+    chatPinned = true;
+    updateChatJump();
+  }
+
+  // The arrow shows once you're more than a screenful above the newest message
+  function updateChatJump() {
+    const c = el.chatMessages;
+    const far = chatDistFromBottom() > Math.max(300, c.clientHeight);
+    chatJumpBtn.hidden = !far;
+    if (far) {
+      chatJumpBtn.style.top = `${c.offsetTop + c.clientHeight - chatJumpBtn.offsetHeight - 8}px`;
+      chatJumpBtn.style.left = `${c.offsetLeft + c.clientWidth - chatJumpBtn.offsetWidth - 8}px`;
+    }
+  }
+
+  el.chatMessages.addEventListener("scroll", () => {
+    chatPinned = chatDistFromBottom() < CHAT_PIN_PX;
+    updateChatJump();
+  });
+  chatJumpBtn.addEventListener("click", () => {
+    el.chatMessages.scrollTo({ top: el.chatMessages.scrollHeight, behavior: "smooth" });
+    chatPinned = true;
+  });
+  // Images load after the text and the pane can be resized: keep the bottom in view if pinned
+  el.chatMessages.addEventListener(
+    "load",
+    () => {
+      if (chatPinned) scrollChatToBottom();
+    },
+    true,
+  );
+  new ResizeObserver(() => {
+    if (chatPinned) scrollChatToBottom();
+    else updateChatJump();
+  }).observe(el.chatMessages);
+
+  // Rebuilding the list resets the scroll position, so restore it (or pin to the bottom)
+  function finishChatRender(stick, prevTop) {
+    if (stick) scrollChatToBottom();
+    else {
+      el.chatMessages.scrollTop = prevTop;
+      updateChatJump();
+    }
+  }
+
   function renderChat(forceBottom = false) {
-    const stick =
-      forceBottom ||
-      el.chatMessages.scrollHeight -
-        el.chatMessages.scrollTop -
-        el.chatMessages.clientHeight <
-        60;
+    const stick = forceBottom || chatPinned;
+    const prevTop = el.chatMessages.scrollTop;
     el.chatMessages.innerHTML = "";
     // Chat is members-only
     el.chatForm.hidden = !state.user;
@@ -829,19 +890,15 @@
         }, () => hideMessage(`g:${msg.id}`, () => renderChat(false))),
       );
     }
-    if (stick) el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+    finishChatRender(stick, prevTop);
   }
 
   function renderDMChat(userId, forceBottom = false) {
     const msgs = (state.dmMessages[userId] || []).filter(
       (m) => !hiddenMsgs.has(`dm:${m.id}`),
     );
-    const stick =
-      forceBottom ||
-      el.chatMessages.scrollHeight -
-        el.chatMessages.scrollTop -
-        el.chatMessages.clientHeight <
-        60;
+    const stick = forceBottom || chatPinned;
+    const prevTop = el.chatMessages.scrollTop;
     el.chatMessages.innerHTML = "";
     if (!msgs.length) {
       el.chatMessages.innerHTML = "<p>No messages yet.</p>";
@@ -868,7 +925,7 @@
         }, () => hideMessage(`dm:${msg.id}`, () => renderDMChat(userId, false))),
       );
     }
-    if (stick) el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+    finishChatRender(stick, prevTop);
   }
 
   function renderDirectory() {

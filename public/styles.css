@@ -1707,3 +1707,20 @@ body.pip-body > .pane #chat-messages {
 .news-summary {
   margin: 2px 0 0;
 }
+
+/* Jump-to-latest arrow: floats in the chat log's bottom-right corner (placed by app.js) */
+#chat-jump-btn {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+#chat-jump-btn[hidden] {
+  display: none;
+}
