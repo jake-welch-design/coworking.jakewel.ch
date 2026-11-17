@@ -901,6 +901,14 @@ body.timer-alarm .pane {
   position: relative;
   padding-right: 22px;
   line-height: 1.4;
+  /* Long words and URLs wrap instead of overflowing; real words hyphenate at syllables */
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+/* Hyphenating a URL would look like part of the link, so links just break */
+.chat-line a {
+  hyphens: manual;
 }
 
 /* Usernames 1px smaller than the message text */
