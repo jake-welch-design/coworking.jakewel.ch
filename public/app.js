@@ -2416,10 +2416,12 @@
     }
     const items = mixMenu.querySelectorAll(".mixtape-item");
 
-    // "Now on" label for the playing NTS channel, from NTS's public live API (CORS-open)
+    // "Now on" label for the playing NTS channel, from NTS's public live API (CORS-open).
+    // The API also lists upcoming shows, so the label flips on time at each show change
+    // even before the next fetch.
     const nowEl = document.getElementById("nts-now");
     const CHANNEL_POLL_MS = 5 * 60000;
-    let liveShows = {}; // channel "1"/"2" -> { title, endsAt }
+    let schedules = {}; // channel "1"/"2" -> [{ title, startsAt, endsAt }, ...]
     let liveFetchedAt = 0,
       liveTimer = null;
     const playingChannel = () => {
@@ -2427,6 +2429,13 @@
       const b = [...btns].find((x) => x.dataset.src === cur);
       return b ? b.dataset.n : null;
     };
+    const currentShow = (ch) => {
+      const now = Date.now();
+      return (schedules[ch] || []).find((x) => x.startsAt <= now && now < x.endsAt) || null;
+    };
+    // Titles arrive HTML-escaped ("Billy Goods &amp; Yamaguicci")
+    const decodeEntities = (str) =>
+      new DOMParser().parseFromString(String(str), "text/html").documentElement.textContent;
     // "10–11 AM", "10:30–11:30 AM", "11 AM–1 PM" in the listener's own time zone
     const fmtShowTime = (startsAt, endsAt) => {
       if (!startsAt || !endsAt) return "";
@@ -2446,7 +2455,7 @@
         : `${a.clock} ${a.ap}\u2013${b.clock} ${b.ap}`;
     };
     const renderNow = () => {
-      const show = liveShows[playingChannel()];
+      const show = currentShow(playingChannel());
       nowEl.hidden = !show;
       nowEl.textContent = "";
       nowEl.title = "";
@@ -2461,37 +2470,44 @@
       }
       nowEl.title = `Now on NTS: ${show.title}${time ? ` (${time})` : ""}`;
     };
-    // Fetch while a channel plays; refetch when the current show ends (or every 5 min)
+    // While a channel plays: refetch every 5 min and just after each show ends.
+    // Cache-busted: NTS sends max-age=900, which otherwise returns the old show for 15 min.
     const refreshLive = async () => {
       clearTimeout(liveTimer);
       if (!playingChannel()) return;
       try {
-        const r = await fetch("https://www.nts.live/api/v2/live");
+        const r = await fetch(`https://www.nts.live/api/v2/live?t=${Date.now()}`, {
+          cache: "no-store",
+        });
         const d = await r.json();
-        liveShows = {};
+        const next = {};
         for (const c of d.results || []) {
-          const title = c.now?.broadcast_title;
-          if (title)
-            liveShows[c.channel_name] = {
-              title,
-              startsAt: Date.parse(c.now.start_timestamp) || 0,
-              endsAt: Date.parse(c.now.end_timestamp) || 0,
-            };
+          const slots = [c.now];
+          for (let i = 1; c[i === 1 ? "next" : `next${i}`]; i++)
+            slots.push(c[i === 1 ? "next" : `next${i}`]);
+          next[c.channel_name] = slots
+            .filter((x) => x && x.broadcast_title)
+            .map((x) => ({
+              title: decodeEntities(x.broadcast_title),
+              startsAt: Date.parse(x.start_timestamp) || 0,
+              endsAt: Date.parse(x.end_timestamp) || 0,
+            }));
         }
+        schedules = next;
         liveFetchedAt = Date.now();
       } catch {}
       renderNow();
-      const ends = liveShows[playingChannel()]?.endsAt;
-      const untilEnd = ends ? ends - Date.now() + 15000 : CHANNEL_POLL_MS;
+      const ends = currentShow(playingChannel())?.endsAt;
+      const untilEnd = ends ? ends - Date.now() + 2000 : CHANNEL_POLL_MS;
       liveTimer = setTimeout(
         refreshLive,
-        Math.max(30000, Math.min(untilEnd, CHANNEL_POLL_MS)),
+        Math.max(15000, Math.min(untilEnd, CHANNEL_POLL_MS)),
       );
     };
 
     const render = () => {
       const ch = playingChannel();
-      if (ch && (!liveShows[ch] || Date.now() - liveFetchedAt > CHANNEL_POLL_MS))
+      if (ch && (!currentShow(ch) || Date.now() - liveFetchedAt > CHANNEL_POLL_MS))
         refreshLive();
       else if (!ch) clearTimeout(liveTimer);
       renderNow();
