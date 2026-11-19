@@ -400,11 +400,22 @@
 
   // --- Render ---
 
+  // Puts the saved pane layout back to the default (layout.js loads after this file, so look it up on click)
+  function layoutResetLink() {
+    const a = actionLink("Reset layout", () => {
+      if (window.CoworkingLayout) window.CoworkingLayout.reset();
+    });
+    a.id = "layout-reset-link";
+    a.title = "Put the panes back in their default spots";
+    return a;
+  }
+
   function renderAuthBar() {
     el.authBar.innerHTML = "";
     if (!state.user) {
       el.authBar.innerHTML =
         '<a href="/login.html">Log in</a> / <a href="/signup.html">Sign up</a>';
+      el.authBar.prepend(layoutResetLink(), " · ");
       if (window.themeToggleBtn) {
         el.authBar.prepend(window.themeToggleBtn, " ");
       }
@@ -452,6 +463,8 @@
       el.authBar.appendChild(document.createTextNode(" · "));
       el.authBar.appendChild(notifyCheckbox());
     }
+    el.authBar.appendChild(document.createTextNode(" · "));
+    el.authBar.appendChild(layoutResetLink());
     if (window.themeToggleBtn) {
       el.authBar.appendChild(document.createTextNode(" · "));
       el.authBar.appendChild(window.themeToggleBtn);

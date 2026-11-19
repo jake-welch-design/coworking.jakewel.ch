@@ -48,6 +48,7 @@
       else delete slots[id];
       build();
     },
+    reset,
   };
   // Breakpoints: wide = saved layout; medium = at most 2 columns; mobile = one stack
   const mobileQuery = window.matchMedia("(max-width: 768px)");
@@ -448,10 +449,14 @@
     if (!resize && !move) clearEdgeHover();
   });
 
-  workspace.addEventListener("dblclick", (e) => {
-    if (!e.target.closest(".pane-gutter") || !editable()) return;
+  function reset() {
     layout = DEFAULT_LAYOUT();
     build();
     save();
+  }
+
+  workspace.addEventListener("dblclick", (e) => {
+    if (!e.target.closest(".pane-gutter") || !editable()) return;
+    reset();
   });
 })();
