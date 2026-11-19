@@ -1,4 +1,4 @@
-// Newspaper pane: headlines per category from /api/news (Google News RSS, cached on the server).
+// Newspaper pane: headlines per category from /api/news (several outlets' RSS, mixed and cached on the server).
 
 (function () {
   "use strict";
@@ -79,12 +79,7 @@
         time.textContent = ` ${meta}`;
         li.appendChild(time);
       }
-      if (it.also && it.also.length) {
-        const p = document.createElement("p");
-        p.className = "news-summary news-also";
-        p.textContent = `Also: ${it.also.join(", ")}`;
-        li.appendChild(p);
-      } else if (it.summary) {
+      if (it.summary) {
         const p = document.createElement("p");
         p.className = "news-summary";
         p.textContent = it.summary;

@@ -184,26 +184,34 @@ async function ensureSchema(db) {
   schemaInitialized = true;
 }
 
-// --- Newspaper: Google News RSS (top stories ranked across outlets), fetched server-side
-// (no CORS, no API key) and cached briefly. NPR is the fallback if Google fails or blocks us.
-const GOOGLE_NEWS_PARAMS = 'hl=en-US&gl=US&ceid=US:en';
-const googleTopic = (name) => `https://news.google.com/rss/headlines/section/topic/${name}?${GOOGLE_NEWS_PARAMS}`;
+// --- Newspaper: headlines mixed from several outlets' RSS, fetched server-side (no CORS, no API key)
+// and cached briefly. Google News would be nicer but blocks Cloudflare's IPs (503 "Sorry..." page).
+// Each tab takes turns between its outlets, keeping each outlet's own order (its lead story first).
+// Politics and Tech use Memeorandum / Techmeme, which already rank stories across outlets.
+// Yahoo's top feed is how AP and Reuters get in: neither has public feeds of its own.
+const NEWS_PER_TAB = 40;
+const nyt = (section) => ({ url: `https://rss.nytimes.com/services/xml/rss/nyt/${section}.xml`, source: 'New York Times' });
+const bbc = (path) => ({ url: `https://feeds.bbci.co.uk/news/${path}rss.xml`, source: 'BBC' });
+const guardian = (path) => ({ url: `https://www.theguardian.com/${path}/rss`, source: 'The Guardian' });
+const npr = (id) => ({ url: `https://feeds.npr.org/${id}/rss.xml`, source: 'NPR' });
+const ALJAZEERA = { url: 'https://www.aljazeera.com/xml/rss/all.xml', source: 'Al Jazeera' };
 const NEWS_FEEDS = {
-  top: { url: `https://news.google.com/rss?${GOOGLE_NEWS_PARAMS}`, fallback: 'https://feeds.npr.org/1001/rss.xml' },
-  us: { url: googleTopic('NATION'), fallback: 'https://feeds.npr.org/1003/rss.xml' },
-  // Google has no named Politics section; this is its Politics topic id
-  politics: {
-    url: `https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtVnVLQUFQAQ?${GOOGLE_NEWS_PARAMS}`,
-    fallback: 'https://feeds.npr.org/1014/rss.xml'
-  },
-  world: { url: googleTopic('WORLD'), fallback: 'https://feeds.npr.org/1004/rss.xml' },
-  business: { url: googleTopic('BUSINESS'), fallback: 'https://feeds.npr.org/1006/rss.xml' },
-  tech: { url: googleTopic('TECHNOLOGY'), fallback: 'https://feeds.npr.org/1019/rss.xml' },
-  science: { url: googleTopic('SCIENCE'), fallback: 'https://feeds.npr.org/1007/rss.xml' },
-  arts: { url: googleTopic('ENTERTAINMENT'), fallback: 'https://feeds.npr.org/1008/rss.xml' }
+  top: [{ url: 'https://news.yahoo.com/rss/', yahoo: true }, nyt('HomePage'), bbc(''), guardian('us'), ALJAZEERA, npr(1001)],
+  us: [nyt('US'), guardian('us-news'), bbc('world/us_and_canada/'), npr(1003)],
+  politics: [{ url: 'https://www.memeorandum.com/feed.xml', meme: true }],
+  world: [bbc('world/'), nyt('World'), guardian('world'), ALJAZEERA, npr(1004)],
+  business: [nyt('Business'), { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', source: 'CNBC' }, bbc('business/'), guardian('business'), npr(1006)],
+  tech: [{ url: 'https://www.techmeme.com/feed.xml', meme: true }],
+  science: [nyt('Science'), bbc('science_and_environment/'), guardian('science'), npr(1007)],
+  arts: [nyt('Arts'), bbc('entertainment_and_arts/'), guardian('culture'), npr(1008)]
 };
 const NEWS_TTL_MS = 15 * 60 * 1000;
 const newsCache = new Map(); // category -> { at, items }
+
+const NAMED_ENTITIES = {
+  quot: '"', apos: "'", lt: '<', gt: '>', amp: '&', nbsp: ' ', mdash: '—', ndash: '–', hellip: '…',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”'
+};
 
 function decodeXmlText(str) {
   return String(str || '')
@@ -211,9 +219,8 @@ function decodeXmlText(str) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-    .replace(/&nbsp;/g, ' ')
+    // One pass, so "&amp;lt;" becomes "&lt;" (escaped HTML), not "<"
+    .replace(/&([a-z]+);/gi, (m, name) => NAMED_ENTITIES[name.toLowerCase()] ?? m)
     // Feeds often escape their HTML (&lt;em&gt;), so strip tags again once decoded
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
@@ -221,27 +228,11 @@ function decodeXmlText(str) {
     .trim();
 }
 
-// Google News descriptions are an escaped <ol> of the story cluster; each outlet name sits in a
-// <font> tag. Returns the other outlets covering the story, excluding the lead source.
-function parseGoogleCluster(rawDescription, leadSource) {
-  const html = String(rawDescription || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-  const seen = new Set([leadSource]);
-  const outlets = [];
-  for (const m of html.matchAll(/<font\b[^>]*>([\s\S]*?)<\/font>/g)) {
-    const name = decodeXmlText(m[1]).split(' - ')[0]; // "ABC News - Breaking News, ..." -> "ABC News"
-    if (name && !seen.has(name)) {
-      seen.add(name);
-      outlets.push(name);
-    }
-  }
-  return outlets.slice(0, 4);
-}
-
-function parseRssItems(xml) {
+function parseRssItems(xml, feed) {
   const items = [];
   const re = /<item\b[\s\S]*?<\/item>/g;
   let m;
-  while ((m = re.exec(xml)) && items.length < 40) {
+  while ((m = re.exec(xml)) && items.length < NEWS_PER_TAB) {
     const block = m[0];
     const raw = (name) => {
       const t = block.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`));
@@ -249,45 +240,73 @@ function parseRssItems(xml) {
     };
     const tag = (name) => decodeXmlText(raw(name));
     let title = tag('title');
-    const link = tag('link');
+    let link = tag('link');
+    let source = feed.source || tag('source');
+    let summary = tag('description');
+    if (feed.meme) {
+      // "Headline (Author/Outlet)", linking to a Memeorandum/Techmeme page; the article is the first link
+      const byline = title.match(/\s*\(([^()]*)\)$/);
+      if (byline) {
+        title = title.slice(0, byline.index);
+        source = byline[1].split('/').pop().trim();
+      }
+      const article = raw('description').match(/<A HREF="(https?:\/\/[^"]+)"/i);
+      if (article) link = article[1];
+      // Description reads "Byline: Headline — [Author —] Summary"; the longest later part is the summary
+      summary = summary.split(' — ').slice(1).reduce((a, b) => (b.length > a.length ? b : a), '');
+    }
     if (!title || !/^https?:\/\//.test(link)) continue;
-    const source = tag('source');
-    const isGoogle = link.startsWith('https://news.google.com/');
-    // Google appends " - Outlet" to every headline; it's shown separately instead
-    if (source && title.endsWith(` - ${source}`)) title = title.slice(0, -(source.length + 3)).trim();
+    if (feed.yahoo && (!source || /^yahoo/i.test(source))) continue; // keep the wire stories, skip Yahoo's own
     const date = Date.parse(tag('pubDate'));
     items.push({
       title,
       link,
       source: source || null,
-      also: isGoogle ? parseGoogleCluster(raw('description'), source) : [],
-      summary: isGoogle ? '' : tag('description').slice(0, 300),
+      summary: summary.length > 300 ? `${summary.slice(0, 297).trimEnd()}…` : summary,
       published_at: Number.isFinite(date) ? new Date(date).toISOString() : null
     });
   }
   return items;
 }
 
-async function fetchFeed(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'coworking-hub/1.0 (RSS reader)' } });
+async function fetchFeed(feed) {
+  const res = await fetch(feed.url, {
+    headers: { 'User-Agent': 'coworking-hub/1.0 (RSS reader)' },
+    signal: AbortSignal.timeout(8000)
+  });
   if (!res.ok) throw new Error(`Feed returned ${res.status}`);
-  const items = parseRssItems(await res.text());
-  if (!items.length) throw new Error('Feed had no stories');
-  return items;
+  return parseRssItems(await res.text(), feed);
+}
+
+// Takes one story from each outlet in turn, skipping repeats (same link or same headline)
+function interleaveFeeds(lists) {
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; out.length < NEWS_PER_TAB && lists.some((l) => i < l.length); i++) {
+    for (const list of lists) {
+      const it = list[i];
+      if (!it) continue;
+      const keys = [it.link.split(/[?#]/)[0], it.title.toLowerCase()];
+      if (keys.some((k) => seen.has(k))) continue;
+      keys.forEach((k) => seen.add(k));
+      out.push(it);
+      if (out.length >= NEWS_PER_TAB) break;
+    }
+  }
+  return out;
 }
 
 async function fetchNews(category) {
   const hit = newsCache.get(category);
   if (hit && Date.now() - hit.at < NEWS_TTL_MS) return hit.items;
-  const feed = NEWS_FEEDS[category];
-  try {
-    const items = await fetchFeed(feed.url).catch(() => fetchFeed(feed.fallback));
+  const results = await Promise.allSettled(NEWS_FEEDS[category].map(fetchFeed));
+  const items = interleaveFeeds(results.filter((r) => r.status === 'fulfilled').map((r) => r.value));
+  if (items.length) {
     newsCache.set(category, { at: Date.now(), items });
     return items;
-  } catch (err) {
-    if (hit) return hit.items; // serve stale rather than nothing
-    throw err;
   }
+  if (hit) return hit.items; // every outlet failed: serve stale rather than nothing
+  throw new Error('No news feeds responded');
 }
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
